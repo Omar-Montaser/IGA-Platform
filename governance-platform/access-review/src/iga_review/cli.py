@@ -3,6 +3,7 @@ import argparse
 from dataclasses import asdict
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import secrets
@@ -14,6 +15,7 @@ from .demo import build_demo
 from .domain import User, strict_json, utcnow
 from .explanations import RuleExplainer, OpenAIExplainer
 from .service import ReviewService
+from .worker import WorkerConfig, run_worker
 
 
 def initialize(directory, demo=False):
@@ -63,7 +65,7 @@ def load_service(directory):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
-    for command in ('init', 'serve', 'demo', 'work'):
+    for command in ('init', 'serve', 'demo', 'work', 'worker'):
         cmd = sub.add_parser(command)
         cmd.add_argument('--state-dir', type=Path, default=Path('.iga-review'))
         if command in ('serve', 'demo'):
@@ -72,8 +74,21 @@ def main(argv=None):
         if command == 'demo':
             cmd.add_argument('--identities', type=Path, default=Path('../hr-policy/data/identities.json'))
             cmd.add_argument('--policies', type=Path, default=Path('../hr-policy/data/policies.json'))
+        if command == 'worker':
+            cmd.add_argument('--poll-interval', type=int, default=10, help='Polling interval in seconds (default: 10)')
+            cmd.add_argument('--max-poll-interval', type=int, default=60, help='Maximum polling interval when idle (default: 60)')
+            cmd.add_argument('--log-level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'], default='INFO', help='Logging level (default: INFO)')
     args = parser.parse_args(argv)
     directory = args.state_dir.resolve()
+    
+    # Configure logging for worker
+    if args.command == 'worker':
+        logging.basicConfig(
+            level=getattr(logging, args.log_level),
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            stream=sys.stdout
+        )
+    
     try:
         if args.command == 'init':
             initialize(directory)
@@ -92,9 +107,25 @@ def main(argv=None):
         if args.command == 'demo' and not service.demo:
             raise ValueError('This state directory is not a demo. Use serve or a new demo directory.')
         if args.command == 'work':
+            # One-shot work command (backward compatible)
             admin = next(u for u in service.users.values() if u.role == 'admin')
             results = [service.process(c['id'], admin) for c in service.list_campaigns(admin)['campaigns']]
             print(json.dumps(results, indent=2))
+            return 0
+        if args.command == 'worker':
+            # Supervised worker mode
+            config = WorkerConfig(
+                poll_interval_seconds=args.poll_interval,
+                max_poll_interval_seconds=args.max_poll_interval
+            )
+            logger = logging.getLogger('iga_review.worker')
+            logger.info('Starting remediation worker', extra={
+                'state_dir': str(directory),
+                'demo': service.demo,
+                'poll_interval': config.poll_interval_seconds,
+                'max_poll_interval': config.max_poll_interval_seconds
+            })
+            run_worker(service, config)
             return 0
         print(f'Reviewer credential: {directory / "reviewer-token.txt"}')
         print(f'Open http://{args.host}:{args.port} — ' + ('SIMULATED SOURCE, no real target changes.' if service.demo else 'Configured connectors only.'))

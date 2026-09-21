@@ -204,7 +204,11 @@ class APITests(Case):
     def test_auth_and_submitted_actor_rejection(self):
         root=self.client.get('/')
         self.assertEqual(root.status_code,200)
-        self.assertIn('core API ready',root.json()['status'])
+        # Root may return HTML (UI) or JSON (API status) depending on static files
+        if 'text/html' in root.headers.get('content-type', ''):
+            self.assertIn('IGA Access Review', root.text)
+        else:
+            self.assertIn('core API ready', root.json()['status'])
         self.assertEqual(self.client.get('/api/health').status_code,200)
         self.assertEqual(self.client.get('/api/campaigns').status_code,401)
         self.assertEqual(self.client.get('/api/me',headers=self.headers).json()['id'],'admin')

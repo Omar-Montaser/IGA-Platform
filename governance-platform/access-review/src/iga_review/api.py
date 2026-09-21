@@ -1,8 +1,10 @@
 """Same-origin authenticated API for the Module 4 review core."""
+from pathlib import Path
 import sqlite3
 from urllib.parse import urlsplit
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from iga_hr import BundleValidationError
 from .domain import InputError, Scan, strict_json
@@ -13,6 +15,11 @@ MAX_BODY = 10 * 1024 * 1024
 
 def create_app(service):
     app = FastAPI(title='IGA Access Review', version='1.0.0', docs_url=None, redoc_url=None, openapi_url=None)
+    
+    # Mount static files for the UI
+    static_dir = Path(__file__).parent.parent.parent / 'static'
+    if static_dir.exists():
+        app.mount('/static', StaticFiles(directory=str(static_dir)), name='static')
     app.state.service = service
 
     def error(status, code, message):
@@ -134,12 +141,17 @@ def create_app(service):
 
     @app.get('/')
     def index():
+        # Serve the UI if available
+        ui_path = Path(__file__).parent.parent.parent / 'static' / 'index.html'
+        if ui_path.exists():
+            return FileResponse(ui_path)
+        # Fallback to API status
         return {
             'name': 'IGA Access Review API',
             'module': 4,
             'version': '1.0.0',
             'health': '/api/health',
-            'status': 'core API ready; reviewer UI is follow-on work',
+            'status': 'core API ready; reviewer UI is available at /',
         }
 
     return app

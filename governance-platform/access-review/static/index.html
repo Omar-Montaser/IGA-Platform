@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IGA Access Review</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div id="app" role="main">
+        <div id="login-view" class="view" aria-label="Login">
+            <div class="login-container">
+                <h1>IGA Access Review</h1>
+                <form id="login-form" aria-label="Authentication">
+                    <label for="token-input">Reviewer Credential</label>
+                    <input 
+                        type="password" 
+                        id="token-input" 
+                        name="token"
+                        placeholder="Enter bearer token"
+                        required
+                        autocomplete="off"
+                        aria-describedby="token-help"
+                    >
+                    <p id="token-help" class="help-text">
+                        Paste your reviewer credential from the token file
+                    </p>
+                    <button type="submit">Sign In</button>
+                    <div id="login-error" class="error" role="alert" aria-live="polite"></div>
+                </form>
+            </div>
+        </div>
+
+        <div id="main-view" class="view hidden">
+            <header class="app-header">
+                <h1>IGA Access Review</h1>
+                <div class="header-info">
+                    <span id="user-name"></span>
+                    <span id="user-role" class="badge"></span>
+                    <button id="logout-btn" type="button">Sign Out</button>
+                </div>
+            </header>
+
+            <nav class="app-nav" aria-label="Main navigation">
+                <button type="button" class="nav-btn active" data-view="campaigns">Campaigns</button>
+                <button type="button" class="nav-btn" data-view="audit" id="audit-nav-btn" hidden>Audit</button>
+            </nav>
+
+            <div id="campaigns-view" class="content-view">
+                <div class="view-header">
+                    <h2>Review Campaigns</h2>
+                    <div class="actions">
+                        <button type="button" id="refresh-campaigns-btn" aria-label="Refresh campaign list">
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+                <div id="campaigns-list" role="region" aria-label="Campaigns"></div>
+                <div id="campaigns-error" class="error" role="alert" aria-live="polite"></div>
+            </div>
+
+            <div id="campaign-detail-view" class="content-view hidden">
+                <div class="view-header">
+                    <button type="button" id="back-to-campaigns-btn" aria-label="Back to campaigns list">
+                        ← Back to Campaigns
+                    </button>
+                    <h2 id="campaign-name"></h2>
+                    <div class="actions" id="campaign-actions"></div>
+                </div>
+                <div id="campaign-warnings" class="warning-banner" role="alert" hidden></div>
+                <div id="campaign-summary" class="summary-cards"></div>
+                <div class="findings-controls">
+                    <label for="risk-filter">Risk Level:</label>
+                    <select id="risk-filter" aria-label="Filter by risk level">
+                        <option value="">All</option>
+                        <option value="critical">Critical</option>
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                    </select>
+                    <label for="status-filter">Status:</label>
+                    <select id="status-filter" aria-label="Filter by status">
+                        <option value="">All</option>
+                        <option value="pending">Pending</option>
+                        <option value="certified">Certified</option>
+                        <option value="acknowledged">Acknowledged</option>
+                        <option value="revoke_queued">Revoke Queued</option>
+                        <option value="verification_pending">Verification Pending</option>
+                        <option value="revoked_verified">Revoked Verified</option>
+                        <option value="revoke_failed">Revoke Failed</option>
+                        <option value="verification_failed">Verification Failed</option>
+                    </select>
+                </div>
+                <div id="findings-list" role="region" aria-label="Findings"></div>
+                <div id="campaign-detail-error" class="error" role="alert" aria-live="polite"></div>
+            </div>
+
+            <div id="finding-detail-view" class="content-view hidden">
+                <div class="view-header">
+                    <button type="button" id="back-to-findings-btn" aria-label="Back to findings list">
+                        ← Back to Findings
+                    </button>
+                    <h2>Finding Detail</h2>
+                </div>
+                <div id="finding-content"></div>
+                <div id="finding-error" class="error" role="alert" aria-live="polite"></div>
+            </div>
+
+            <div id="audit-view" class="content-view hidden">
+                <div class="view-header">
+                    <h2>Audit Log</h2>
+                    <div class="actions">
+                        <label for="audit-campaign-select">Campaign:</label>
+                        <select id="audit-campaign-select" aria-label="Select campaign for audit log">
+                            <option value="">Select a campaign...</option>
+                        </select>
+                        <button type="button" id="load-audit-btn">Load Audit</button>
+                    </div>
+                </div>
+                <div id="audit-content" role="region" aria-label="Audit events"></div>
+                <div id="audit-error" class="error" role="alert" aria-live="polite"></div>
+            </div>
+        </div>
+
+        <div id="loading-overlay" class="overlay hidden" aria-live="polite" aria-busy="true">
+            <div class="spinner"></div>
+            <p>Loading...</p>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

@@ -27,6 +27,12 @@ and fresh scans.
   sends a typed, de-identified evidence subset and falls back to rules.
 - A persistent simulated connector and generated synthetic campaign for local
   end-to-end checks. It never modifies the host operating system.
+- A secure same-origin reviewer browser interface with keyboard accessibility,
+  visible focus states, proper ARIA labels, and responsive layout. The UI
+  supports campaign listing, finding review with filtering, decision workflows,
+  explanation requests, remediation processing, and audit log viewing. Bearer
+  tokens are kept in memory only and never persisted to localStorage. All
+  authorization checks remain server-side.
 
 The risk score is a versioned project heuristic. It is not a probability or an
 authorization decision. Peer rarity is evidence only and cannot override an
@@ -50,8 +56,11 @@ iga-review demo --state-dir .demo-review
 ```
 
 The command prints the path to a generated reviewer token and starts the core
-API at `http://127.0.0.1:8040`. The root route reports API status. Use the HTTP
-contract in [contract.md](docs/contract.md) until a reviewer UI is added.
+API at `http://127.0.0.1:8040`. The reviewer UI is available at the root URL.
+Open a web browser and navigate to `http://127.0.0.1:8040`, then paste the
+token from `.demo-review/reviewer-token.txt` to sign in.
+
+Use the HTTP contract in [contract.md](docs/contract.md) for API integration.
 The generated `.demo-review` state contains credentials and is ignored by Git.
 
 For a non-demo deployment, initialize state with `iga-review init`, edit its
@@ -79,12 +88,14 @@ in [contract.md](docs/contract.md). Design research is in
 
 ## Intentionally left for follow-on work
 
-- Reviewer browser interface and accessibility/browser tests.
 - Integration with the organization's identity provider and user lifecycle.
 - A real Module 3 implementation and its deployed service authentication.
 - Background worker supervision, production database choice, backups,
   deployment manifests, metrics, rate limiting, and operational alerting.
 - Live OpenAI evaluation with an explicitly selected model and project key.
+- Comprehensive browser-based UI testing (current tests verify HTML structure,
+  accessibility attributes, JavaScript security patterns, and API integration
+  without requiring a browser runtime).
 
 These items must not be represented as completed by the simulated connector or
 mocked tests. The continuation prompt supplied with this implementation defines
