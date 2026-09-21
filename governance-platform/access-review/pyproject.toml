@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "iga-access-review"
+version = "1.0.0"
+description = "Module 4 review engine, authenticated API and audited connector workflow"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["iga-hr-policy==1.0.0", "fastapi==0.141.1", "pydantic==2.13.5", "uvicorn==0.53.0", "httpx==0.28.1"]
+
+[project.scripts]
+iga-review = "iga_review.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

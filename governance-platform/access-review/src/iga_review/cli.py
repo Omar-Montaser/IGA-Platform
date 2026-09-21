@@ -1,0 +1,109 @@
+"""Initialize and run the local Module 4 prototype."""
+import argparse
+from dataclasses import asdict
+import hashlib
+import json
+import os
+from pathlib import Path
+import secrets
+import sys
+import uvicorn
+from .api import create_app
+from .connector import FixtureConnector, HTTPConnector
+from .demo import build_demo
+from .domain import User, strict_json, utcnow
+from .explanations import RuleExplainer, OpenAIExplainer
+from .service import ReviewService
+
+
+def initialize(directory, demo=False):
+    directory.mkdir(parents=True, exist_ok=True)
+    directory.chmod(0o700)
+    config_path = directory / 'config.json'
+    if config_path.exists():
+        raise ValueError('State already exists; use serve to preserve the existing review history.')
+    token = secrets.token_urlsafe(32)
+    user = User('reviewer:admin', 'Demo reviewer' if demo else 'Review administrator', 'admin', None, hashlib.sha256(token.encode()).hexdigest())
+    config = {'version': 1, 'demo': demo, 'fallback_reviewer_id': user.id, 'users': [asdict(user)], 'connectors': []}
+    for name, content in (('config.json', json.dumps(config, indent=2) + '\n'), ('reviewer-token.txt', token + '\n')):
+        path = directory / name
+        with path.open('x', encoding='utf-8') as stream:
+            stream.write(content)
+        path.chmod(0o600)
+    return config
+
+
+def load_service(directory):
+    config = strict_json((directory / 'config.json').read_text())
+    if config.get('version') != 1:
+        raise ValueError('Unsupported configuration version')
+    users = [User(**u) for u in config['users']]
+    connectors = {}
+    if config['demo']:
+        connectors['prototype-system'] = FixtureConnector(directory / 'simulated-source.sqlite3')
+    else:
+        for item in config.get('connectors', []):
+            if item['source'] in connectors:
+                raise ValueError('Duplicate connector source')
+            connectors[item['source']] = HTTPConnector(item['base_url'], os.environ.get(item['token_env'], ''))
+    mode = os.environ.get('IGA_AI_PROVIDER', 'rules')
+    if mode not in ('rules', 'openai'):
+        raise ValueError('IGA_AI_PROVIDER must be rules or openai')
+    if mode == 'openai':
+        key, model = os.environ.get('OPENAI_API_KEY'), os.environ.get('IGA_AI_MODEL')
+        if not key or not model:
+            raise ValueError('Explicit OpenAI mode requires OPENAI_API_KEY and IGA_AI_MODEL')
+        explainer = OpenAIExplainer(key, model)
+    else:
+        explainer = RuleExplainer()
+    return ReviewService(directory / 'reviews.sqlite3', users, fallback_reviewer_id=config['fallback_reviewer_id'],
+                         connectors=connectors, explainer=explainer, demo=config['demo'])
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest='command', required=True)
+    for command in ('init', 'serve', 'demo', 'work'):
+        cmd = sub.add_parser(command)
+        cmd.add_argument('--state-dir', type=Path, default=Path('.iga-review'))
+        if command in ('serve', 'demo'):
+            cmd.add_argument('--host', choices=['127.0.0.1', '::1'], default='127.0.0.1')
+            cmd.add_argument('--port', type=int, default=8040)
+        if command == 'demo':
+            cmd.add_argument('--identities', type=Path, default=Path('../hr-policy/data/identities.json'))
+            cmd.add_argument('--policies', type=Path, default=Path('../hr-policy/data/policies.json'))
+    args = parser.parse_args(argv)
+    directory = args.state_dir.resolve()
+    try:
+        if args.command == 'init':
+            initialize(directory)
+            print(f'Initialized. Reviewer credential: {directory / "reviewer-token.txt"}')
+            return 0
+        if args.command == 'demo' and not (directory / 'config.json').exists():
+            # Validate all input and generate the fixture before creating credentials.
+            payload = build_demo(strict_json(args.identities.read_text()), strict_json(args.policies.read_text()), utcnow())
+            initialize(directory, demo=True)
+            FixtureConnector(directory / 'simulated-source.sqlite3', payload['scan'])
+            (directory / 'demo-import.json').write_text(json.dumps(payload, indent=2, ensure_ascii=False) + '\n')
+            service = load_service(directory)
+            service.create_campaign(payload, service.users['reviewer:admin'])
+        else:
+            service = load_service(directory)
+        if args.command == 'demo' and not service.demo:
+            raise ValueError('This state directory is not a demo. Use serve or a new demo directory.')
+        if args.command == 'work':
+            admin = next(u for u in service.users.values() if u.role == 'admin')
+            results = [service.process(c['id'], admin) for c in service.list_campaigns(admin)['campaigns']]
+            print(json.dumps(results, indent=2))
+            return 0
+        print(f'Reviewer credential: {directory / "reviewer-token.txt"}')
+        print(f'Open http://{args.host}:{args.port} — ' + ('SIMULATED SOURCE, no real target changes.' if service.demo else 'Configured connectors only.'))
+        uvicorn.run(create_app(service), host=args.host, port=args.port, log_level='info')
+        return 0
+    except (OSError, ValueError, StopIteration) as exc:
+        print(f'Unable to start Module 4: {exc}', file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
