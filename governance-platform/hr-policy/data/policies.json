@@ -1,0 +1,504 @@
+{
+  "schema_version": "1.0.0",
+  "dataset_id": "access-review-demo-2026-09-21",
+  "snapshot_at": "2026-09-21T00:00:00Z",
+  "synthetic": true,
+  "effective_from": "2026-09-01",
+  "unlisted_access": "review",
+  "entitlements": [
+    {
+      "id": "ent:collaboration:workspace-read",
+      "name": "Read shared workspaces",
+      "description": "Read ordinary internal collaboration content.",
+      "type": "permission",
+      "sensitivity": "low",
+      "privileged": false
+    },
+    {
+      "id": "ent:collaboration:workspace-write",
+      "name": "Contribute to shared workspaces",
+      "description": "Create and edit ordinary internal collaboration content.",
+      "type": "permission",
+      "sensitivity": "medium",
+      "privileged": false
+    },
+    {
+      "id": "ent:knowledge:articles-read",
+      "name": "Read internal knowledge articles",
+      "description": "Read general internal operating guidance.",
+      "type": "permission",
+      "sensitivity": "low",
+      "privileged": false
+    },
+    {
+      "id": "ent:hr:directory-read",
+      "name": "Read employee directory",
+      "description": "View basic work directory information.",
+      "type": "permission",
+      "sensitivity": "medium",
+      "privileged": false
+    },
+    {
+      "id": "ent:hr:employee-records-read",
+      "name": "Read confidential employee records",
+      "description": "Read restricted human resources employment records.",
+      "type": "permission",
+      "sensitivity": "high",
+      "privileged": false
+    },
+    {
+      "id": "ent:hr:employee-records-write",
+      "name": "Maintain confidential employee records",
+      "description": "Create and update restricted human resources employment records.",
+      "type": "permission",
+      "sensitivity": "high",
+      "privileged": false
+    },
+    {
+      "id": "ent:hr:payroll-admin",
+      "name": "Administer payroll configuration",
+      "description": "Change payroll processing configuration and administrative settings.",
+      "type": "permission",
+      "sensitivity": "critical",
+      "privileged": true
+    },
+    {
+      "id": "ent:finance:invoices-read",
+      "name": "Read invoices",
+      "description": "Read business invoices and their processing status.",
+      "type": "permission",
+      "sensitivity": "medium",
+      "privileged": false
+    },
+    {
+      "id": "ent:finance:invoices-manage",
+      "name": "Process invoices",
+      "description": "Create and update invoices without approving payments.",
+      "type": "permission",
+      "sensitivity": "high",
+      "privileged": false
+    },
+    {
+      "id": "ent:finance:payments-approve",
+      "name": "Approve payments",
+      "description": "Authorize outgoing business payments as a designated approver.",
+      "type": "permission",
+      "sensitivity": "critical",
+      "privileged": true
+    },
+    {
+      "id": "ent:finance:ledger-admin",
+      "name": "Administer financial ledger",
+      "description": "Change ledger configuration and privileged accounting settings.",
+      "type": "permission",
+      "sensitivity": "critical",
+      "privileged": true
+    },
+    {
+      "id": "ent:sales:customer-records-read",
+      "name": "Read customer records",
+      "description": "Read customer and prospect business records.",
+      "type": "permission",
+      "sensitivity": "high",
+      "privileged": false
+    },
+    {
+      "id": "ent:sales:customer-records-write",
+      "name": "Maintain customer records",
+      "description": "Create and update customer and prospect business records.",
+      "type": "permission",
+      "sensitivity": "high",
+      "privileged": false
+    },
+    {
+      "id": "ent:sales:pricing-approve",
+      "name": "Approve sales pricing",
+      "description": "Approve pricing exceptions within the sales process.",
+      "type": "permission",
+      "sensitivity": "high",
+      "privileged": false
+    },
+    {
+      "id": "ent:marketing:campaigns-read",
+      "name": "Read marketing campaigns",
+      "description": "View campaign plans and aggregate performance.",
+      "type": "permission",
+      "sensitivity": "medium",
+      "privileged": false
+    },
+    {
+      "id": "ent:marketing:campaigns-manage",
+      "name": "Manage marketing campaigns",
+      "description": "Create and update marketing campaigns.",
+      "type": "permission",
+      "sensitivity": "medium",
+      "privileged": false
+    },
+    {
+      "id": "ent:marketing:audience-export",
+      "name": "Export marketing audiences",
+      "description": "Export approved audience records for campaign operations.",
+      "type": "permission",
+      "sensitivity": "high",
+      "privileged": false
+    },
+    {
+      "id": "ent:engineering:source-read",
+      "name": "Read source code",
+      "description": "Read internal application source code.",
+      "type": "permission",
+      "sensitivity": "high",
+      "privileged": false
+    },
+    {
+      "id": "ent:engineering:source-write",
+      "name": "Contribute source code",
+      "description": "Submit and maintain changes to internal application source code.",
+      "type": "permission",
+      "sensitivity": "high",
+      "privileged": false
+    },
+    {
+      "id": "ent:engineering:production-deploy",
+      "name": "Deploy to production",
+      "description": "Release approved application versions into production.",
+      "type": "permission",
+      "sensitivity": "critical",
+      "privileged": true
+    },
+    {
+      "id": "ent:it:tickets-manage",
+      "name": "Manage service desk tickets",
+      "description": "Triage and resolve internal support tickets.",
+      "type": "permission",
+      "sensitivity": "medium",
+      "privileged": false
+    },
+    {
+      "id": "ent:it:infrastructure-admin",
+      "name": "Administer infrastructure",
+      "description": "Change production infrastructure and administrative settings.",
+      "type": "permission",
+      "sensitivity": "critical",
+      "privileged": true
+    },
+    {
+      "id": "ent:security:audit-read",
+      "name": "Read security audit records",
+      "description": "Read restricted security audit evidence.",
+      "type": "permission",
+      "sensitivity": "high",
+      "privileged": false
+    }
+  ],
+  "role_policies": [
+    {
+      "id": "pol:engineering-specialist",
+      "department": "engineering",
+      "role": "software-engineer",
+      "expected": [
+        "ent:collaboration:workspace-read",
+        "ent:collaboration:workspace-write",
+        "ent:engineering:source-read",
+        "ent:engineering:source-write",
+        "ent:hr:directory-read",
+        "ent:knowledge:articles-read"
+      ],
+      "restricted": [
+        "ent:engineering:production-deploy",
+        "ent:finance:ledger-admin",
+        "ent:finance:payments-approve",
+        "ent:hr:employee-records-read",
+        "ent:hr:employee-records-write",
+        "ent:hr:payroll-admin",
+        "ent:it:infrastructure-admin"
+      ],
+      "privileged": []
+    },
+    {
+      "id": "pol:engineering-manager",
+      "department": "engineering",
+      "role": "engineering-manager",
+      "expected": [
+        "ent:collaboration:workspace-read",
+        "ent:collaboration:workspace-write",
+        "ent:engineering:source-read",
+        "ent:engineering:source-write",
+        "ent:hr:directory-read",
+        "ent:knowledge:articles-read"
+      ],
+      "restricted": [
+        "ent:finance:ledger-admin",
+        "ent:finance:payments-approve",
+        "ent:hr:employee-records-read",
+        "ent:hr:employee-records-write",
+        "ent:hr:payroll-admin",
+        "ent:it:infrastructure-admin"
+      ],
+      "privileged": [
+        "ent:engineering:production-deploy"
+      ]
+    },
+    {
+      "id": "pol:finance-specialist",
+      "department": "finance",
+      "role": "financial-analyst",
+      "expected": [
+        "ent:collaboration:workspace-read",
+        "ent:collaboration:workspace-write",
+        "ent:finance:invoices-manage",
+        "ent:finance:invoices-read",
+        "ent:hr:directory-read",
+        "ent:knowledge:articles-read"
+      ],
+      "restricted": [
+        "ent:engineering:production-deploy",
+        "ent:engineering:source-write",
+        "ent:finance:ledger-admin",
+        "ent:finance:payments-approve",
+        "ent:hr:employee-records-read",
+        "ent:hr:employee-records-write",
+        "ent:hr:payroll-admin",
+        "ent:it:infrastructure-admin"
+      ],
+      "privileged": []
+    },
+    {
+      "id": "pol:finance-manager",
+      "department": "finance",
+      "role": "finance-manager",
+      "expected": [
+        "ent:collaboration:workspace-read",
+        "ent:collaboration:workspace-write",
+        "ent:finance:invoices-manage",
+        "ent:finance:invoices-read",
+        "ent:finance:payments-approve",
+        "ent:hr:directory-read",
+        "ent:knowledge:articles-read"
+      ],
+      "restricted": [
+        "ent:engineering:production-deploy",
+        "ent:engineering:source-write",
+        "ent:hr:employee-records-read",
+        "ent:hr:employee-records-write",
+        "ent:hr:payroll-admin",
+        "ent:it:infrastructure-admin"
+      ],
+      "privileged": [
+        "ent:finance:ledger-admin",
+        "ent:finance:payments-approve"
+      ]
+    },
+    {
+      "id": "pol:hr-specialist",
+      "department": "hr",
+      "role": "people-operations-specialist",
+      "expected": [
+        "ent:collaboration:workspace-read",
+        "ent:collaboration:workspace-write",
+        "ent:hr:directory-read",
+        "ent:hr:employee-records-read",
+        "ent:hr:employee-records-write",
+        "ent:knowledge:articles-read"
+      ],
+      "restricted": [
+        "ent:engineering:production-deploy",
+        "ent:engineering:source-write",
+        "ent:finance:ledger-admin",
+        "ent:finance:payments-approve",
+        "ent:hr:payroll-admin",
+        "ent:it:infrastructure-admin"
+      ],
+      "privileged": []
+    },
+    {
+      "id": "pol:hr-manager",
+      "department": "hr",
+      "role": "hr-manager",
+      "expected": [
+        "ent:collaboration:workspace-read",
+        "ent:collaboration:workspace-write",
+        "ent:hr:directory-read",
+        "ent:hr:employee-records-read",
+        "ent:hr:employee-records-write",
+        "ent:knowledge:articles-read"
+      ],
+      "restricted": [
+        "ent:engineering:production-deploy",
+        "ent:engineering:source-write",
+        "ent:finance:ledger-admin",
+        "ent:finance:payments-approve",
+        "ent:it:infrastructure-admin"
+      ],
+      "privileged": [
+        "ent:hr:payroll-admin"
+      ]
+    },
+    {
+      "id": "pol:sales-specialist",
+      "department": "sales",
+      "role": "account-executive",
+      "expected": [
+        "ent:collaboration:workspace-read",
+        "ent:collaboration:workspace-write",
+        "ent:hr:directory-read",
+        "ent:knowledge:articles-read",
+        "ent:sales:customer-records-read",
+        "ent:sales:customer-records-write"
+      ],
+      "restricted": [
+        "ent:engineering:production-deploy",
+        "ent:engineering:source-write",
+        "ent:finance:ledger-admin",
+        "ent:finance:payments-approve",
+        "ent:hr:employee-records-read",
+        "ent:hr:employee-records-write",
+        "ent:hr:payroll-admin",
+        "ent:it:infrastructure-admin",
+        "ent:sales:pricing-approve"
+      ],
+      "privileged": []
+    },
+    {
+      "id": "pol:sales-manager",
+      "department": "sales",
+      "role": "sales-manager",
+      "expected": [
+        "ent:collaboration:workspace-read",
+        "ent:collaboration:workspace-write",
+        "ent:hr:directory-read",
+        "ent:knowledge:articles-read",
+        "ent:sales:customer-records-read",
+        "ent:sales:customer-records-write",
+        "ent:sales:pricing-approve"
+      ],
+      "restricted": [
+        "ent:engineering:production-deploy",
+        "ent:engineering:source-write",
+        "ent:finance:ledger-admin",
+        "ent:finance:payments-approve",
+        "ent:hr:employee-records-read",
+        "ent:hr:employee-records-write",
+        "ent:hr:payroll-admin",
+        "ent:it:infrastructure-admin"
+      ],
+      "privileged": []
+    },
+    {
+      "id": "pol:marketing-specialist",
+      "department": "marketing",
+      "role": "marketing-specialist",
+      "expected": [
+        "ent:collaboration:workspace-read",
+        "ent:collaboration:workspace-write",
+        "ent:hr:directory-read",
+        "ent:knowledge:articles-read",
+        "ent:marketing:campaigns-manage",
+        "ent:marketing:campaigns-read"
+      ],
+      "restricted": [
+        "ent:engineering:production-deploy",
+        "ent:engineering:source-write",
+        "ent:finance:ledger-admin",
+        "ent:finance:payments-approve",
+        "ent:hr:employee-records-read",
+        "ent:hr:employee-records-write",
+        "ent:hr:payroll-admin",
+        "ent:it:infrastructure-admin",
+        "ent:marketing:audience-export"
+      ],
+      "privileged": []
+    },
+    {
+      "id": "pol:marketing-manager",
+      "department": "marketing",
+      "role": "marketing-manager",
+      "expected": [
+        "ent:collaboration:workspace-read",
+        "ent:collaboration:workspace-write",
+        "ent:hr:directory-read",
+        "ent:knowledge:articles-read",
+        "ent:marketing:audience-export",
+        "ent:marketing:campaigns-manage",
+        "ent:marketing:campaigns-read"
+      ],
+      "restricted": [
+        "ent:engineering:production-deploy",
+        "ent:engineering:source-write",
+        "ent:finance:ledger-admin",
+        "ent:finance:payments-approve",
+        "ent:hr:employee-records-read",
+        "ent:hr:employee-records-write",
+        "ent:hr:payroll-admin",
+        "ent:it:infrastructure-admin"
+      ],
+      "privileged": []
+    },
+    {
+      "id": "pol:it-specialist",
+      "department": "it",
+      "role": "service-desk-analyst",
+      "expected": [
+        "ent:collaboration:workspace-read",
+        "ent:collaboration:workspace-write",
+        "ent:hr:directory-read",
+        "ent:it:tickets-manage",
+        "ent:knowledge:articles-read"
+      ],
+      "restricted": [
+        "ent:engineering:production-deploy",
+        "ent:engineering:source-write",
+        "ent:finance:ledger-admin",
+        "ent:finance:payments-approve",
+        "ent:hr:employee-records-read",
+        "ent:hr:employee-records-write",
+        "ent:hr:payroll-admin",
+        "ent:it:infrastructure-admin"
+      ],
+      "privileged": []
+    },
+    {
+      "id": "pol:it-manager",
+      "department": "it",
+      "role": "it-manager",
+      "expected": [
+        "ent:collaboration:workspace-read",
+        "ent:collaboration:workspace-write",
+        "ent:hr:directory-read",
+        "ent:it:infrastructure-admin",
+        "ent:it:tickets-manage",
+        "ent:knowledge:articles-read"
+      ],
+      "restricted": [
+        "ent:engineering:production-deploy",
+        "ent:engineering:source-write",
+        "ent:finance:ledger-admin",
+        "ent:finance:payments-approve",
+        "ent:hr:employee-records-read",
+        "ent:hr:employee-records-write",
+        "ent:hr:payroll-admin"
+      ],
+      "privileged": [
+        "ent:it:infrastructure-admin"
+      ]
+    }
+  ],
+  "status_rules": [
+    {
+      "status": "active",
+      "access": "role_policy"
+    },
+    {
+      "status": "on_leave",
+      "access": "none"
+    },
+    {
+      "status": "pre_hire",
+      "access": "none"
+    },
+    {
+      "status": "terminated",
+      "access": "none"
+    }
+  ]
+}

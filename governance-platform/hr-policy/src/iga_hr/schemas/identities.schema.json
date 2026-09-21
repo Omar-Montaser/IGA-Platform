@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iga-hr:schema:identities:1.0.0",
+  "title": "Module 1 authoritative identity snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "dataset_id",
+    "snapshot_at",
+    "synthetic",
+    "identities"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "dataset_id": {
+      "$ref": "#/$defs/slug"
+    },
+    "snapshot_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z(?![\\s\\S])"
+    },
+    "synthetic": {
+      "type": "boolean"
+    },
+    "identities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/identity"
+      }
+    }
+  },
+  "$defs": {
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?![\\s\\S])"
+    },
+    "identityId": {
+      "type": "string",
+      "pattern": "^id:[a-z0-9][a-z0-9-]*(?![\\s\\S])"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(?![\\s\\S])"
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "username",
+        "name",
+        "department",
+        "role",
+        "status",
+        "employment_type",
+        "manager_id",
+        "start_date",
+        "end_date"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identityId"
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9._-]*(?![\\s\\S])"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^\\S(?:[\\s\\S]*\\S)?(?![\\s\\S])"
+        },
+        "department": {
+          "$ref": "#/$defs/slug"
+        },
+        "role": {
+          "$ref": "#/$defs/slug"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "on_leave",
+            "pre_hire",
+            "terminated"
+          ]
+        },
+        "employment_type": {
+          "enum": [
+            "employee",
+            "contractor"
+          ]
+        },
+        "manager_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/identityId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "start_date": {
+          "$ref": "#/$defs/date"
+        },
+        "end_date": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/date"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

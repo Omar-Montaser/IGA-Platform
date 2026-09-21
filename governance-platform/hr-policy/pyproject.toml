@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "iga-hr-policy"
+version = "1.0.0"
+description = "Validated HR identities and generic policies for the IGA access review prototype"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["jsonschema==4.26.0"]
+
+[project.scripts]
+iga-hr = "iga_hr.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+iga_hr = ["schemas/*.json"]
+

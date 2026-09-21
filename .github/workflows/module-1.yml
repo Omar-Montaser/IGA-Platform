@@ -1,0 +1,43 @@
+name: Module 1 validation
+
+on:
+  push:
+    paths:
+      - "governance-platform/hr-policy/**"
+      - ".github/workflows/module-1.yml"
+  pull_request:
+    paths:
+      - "governance-platform/hr-policy/**"
+      - ".github/workflows/module-1.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    defaults:
+      run:
+        working-directory: governance-platform/hr-policy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install package
+        run: python -m pip install .
+      - name: Validate demo and run acceptance tests
+        run: |
+          iga-hr validate data/identities.json data/policies.json
+          python scripts/generate_demo.py --check
+          python -m unittest discover -s tests -v
+      - name: Confirm installed package works outside its source directory
+        run: |
+          python -m pip wheel --no-deps . --wheel-dir dist
+          python -m pip install --force-reinstall --no-deps dist/*.whl
+          cd "$RUNNER_TEMP"
+          iga-hr validate "$GITHUB_WORKSPACE/governance-platform/hr-policy/data/identities.json" "$GITHUB_WORKSPACE/governance-platform/hr-policy/data/policies.json"
