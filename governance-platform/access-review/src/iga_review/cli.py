@@ -13,7 +13,7 @@ from .api import create_app
 from .connector import FixtureConnector, HTTPConnector
 from .demo import build_demo
 from .domain import User, strict_json, utcnow
-from .explanations import RuleExplainer, OpenAIExplainer
+from .ai import configured_reviewer, check_connection
 from .service import ReviewService
 from .worker import WorkerConfig, run_worker
 
@@ -48,16 +48,10 @@ def load_service(directory):
             if item['source'] in connectors:
                 raise ValueError('Duplicate connector source')
             connectors[item['source']] = HTTPConnector(item['base_url'], os.environ.get(item['token_env'], ''))
-    mode = os.environ.get('IGA_AI_PROVIDER', 'rules')
-    if mode not in ('rules', 'openai'):
-        raise ValueError('IGA_AI_PROVIDER must be rules or openai')
-    if mode == 'openai':
-        key, model = os.environ.get('OPENAI_API_KEY'), os.environ.get('IGA_AI_MODEL')
-        if not key or not model:
-            raise ValueError('Explicit OpenAI mode requires OPENAI_API_KEY and IGA_AI_MODEL')
-        explainer = OpenAIExplainer(key, model)
-    else:
-        explainer = RuleExplainer()
+    explainer = configured_reviewer()
+    if not config['demo'] and explainer.provider != 'rules' and os.environ.get('IGA_AI_ALLOW_REAL_DATA') != '1':
+        raise ValueError('External AI sends identity evidence to the provider. Obtain data-owner approval, '
+                         'then explicitly set IGA_AI_ALLOW_REAL_DATA=1, or use IGA_AI_PROVIDER=rules.')
     return ReviewService(directory / 'reviews.sqlite3', users, fallback_reviewer_id=config['fallback_reviewer_id'],
                          connectors=connectors, explainer=explainer, demo=config['demo'])
 
@@ -65,6 +59,7 @@ def load_service(directory):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
+    sub.add_parser('ai-check', help='Verify one structured AI generation using synthetic evidence only')
     for command in ('init', 'serve', 'demo', 'work', 'worker'):
         cmd = sub.add_parser(command)
         cmd.add_argument('--state-dir', type=Path, default=Path('.iga-review'))
@@ -79,6 +74,14 @@ def main(argv=None):
             cmd.add_argument('--max-poll-interval', type=int, default=60, help='Maximum polling interval when idle (default: 60)')
             cmd.add_argument('--log-level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'], default='INFO', help='Logging level (default: INFO)')
     args = parser.parse_args(argv)
+    if args.command == 'ai-check':
+        try:
+            result = check_connection(configured_reviewer())
+            print(json.dumps(result))
+            return 0 if result['status'] == 'ready' else 1
+        except ValueError as exc:
+            print(f'AI configuration error: {exc}', file=sys.stderr)
+            return 1
     directory = args.state_dir.resolve()
     
     # Configure logging for worker
@@ -128,6 +131,8 @@ def main(argv=None):
             run_worker(service, config)
             return 0
         print(f'Reviewer credential: {directory / "reviewer-token.txt"}')
+        print(f'Configured reviewer: {service.reviewer.provider} '
+              f'{getattr(service.reviewer, "model", "(no AI)")}. Existing assessments are preserved.')
         print(f'Open http://{args.host}:{args.port} — ' + ('SIMULATED SOURCE, no real target changes.' if service.demo else 'Configured connectors only.'))
         uvicorn.run(create_app(service), host=args.host, port=args.port, log_level='info')
         return 0

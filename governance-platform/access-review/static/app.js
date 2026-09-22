@@ -285,6 +285,8 @@ function renderCampaigns() {
                 <span><strong>Pending:</strong> ${campaign.summary.pending}</span>
                 <span><strong>Critical:</strong> <span class="badge critical">${campaign.summary.critical}</span></span>
                 <span><strong>High:</strong> <span class="badge high">${campaign.summary.high}</span></span>
+                ${campaign.metadata?.review ? `<span><strong>AI-reviewed cases:</strong> ${campaign.metadata.review.cases - campaign.metadata.review.fallback_cases} / ${campaign.metadata.review.cases}</span>
+                <span><strong>Non-AI fallbacks:</strong> ${campaign.metadata.review.fallback_cases}</span>` : ''}
             </div>
             ${campaign.warnings.length > 0 ? `
                 <div style="margin-top: 1rem; color: var(--color-warning);">
@@ -628,7 +630,9 @@ function renderFindingDetail() {
                 <div class="explanation-header">
                     <h3>Independent Case Assessment</h3>
                     <div class="explanation-provider">
-                        Provider: <span class="badge">${finding.explanation.provider}</span>
+                        Provider: <span class="badge">${escapeHtml(finding.explanation.provider)}</span>
+                        ${finding.explanation.model ? ' Model: ' + escapeHtml(finding.explanation.model) : ''}
+                        ${finding.explanation.attempted_provider ? ' (attempted: ' + escapeHtml(finding.explanation.attempted_provider) + ')' : ''}
                         ${finding.explanation.status === 'fallback' ? ' (fallback: ' + escapeHtml(finding.explanation.fallback_reason) + ')' : ''}
                     </div>
                 </div>

@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from pydantic import ValidationError
 from iga_hr import BundleValidationError
 from .domain import InputError, Scan, strict_json
@@ -90,7 +91,8 @@ def create_app(service):
 
     @app.get('/api/me')
     def me(user=Depends(actor)):
-        return {**user.public(), 'demo': service.demo, 'ai_provider': service.explainer.provider}
+        return {**user.public(), 'demo': service.demo, 'ai_provider': service.explainer.provider,
+                'ai_model': getattr(service.explainer, 'model', None)}
 
     @app.get('/api/campaigns')
     def campaigns(user=Depends(actor)):
@@ -100,7 +102,7 @@ def create_app(service):
     async def import_campaign(request: Request, user=Depends(actor)):
         service._admin(user)
         payload, raw = await body(request)
-        return service.create_campaign(payload, user, raw_json=raw)
+        return await run_in_threadpool(service.create_campaign, payload, user, raw_json=raw)
 
     @app.get('/api/campaigns/{campaign_id}')
     def campaign(campaign_id: str, user=Depends(actor)):

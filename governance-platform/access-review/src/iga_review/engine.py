@@ -4,7 +4,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from .domain import EngineConfig, InputError, digest, instant
 
-ENGINE_VERSION = '2.0.0'
+ENGINE_VERSION = '2.1.0'
 SENSITIVITY = {'unknown': 20, 'low': 0, 'medium': 5, 'high': 10, 'critical': 20}
 POINTS = {'expected': 0, 'permitted_privileged': 10, 'restricted': 65,
           'lifecycle_restricted': 75, 'unauthorized_privilege': 65, 'unlisted': 30,
@@ -220,25 +220,44 @@ def evaluate(bundle, scan, correlations, *, now, config=EngineConfig()):
                             if row.identity in account_ids and row.entitlement in item_entitlements]
         case_path_ids = {path_id for row in case_assignments for path_id in row.grant_path_ids}
         case_paths = [path.model_dump() for path_id, path in paths.items() if path_id in case_path_ids]
+        role_ids = {node['ref'] for path in case_paths for node in path['path']
+                    if node['kind'] in ('business_role', 'application_role')}
+        group_ids = {node['ref'] for path in case_paths for node in path['path'] if node['kind'] == 'group'}
+        case_roles = [row.model_dump() for row in scan.roles if row.id in role_ids]
+        case_groups = [row.model_dump() for row in scan.groups if row.id in group_ids]
+        case_exceptions = [row.model_dump() for row in scan.exceptions
+                           if row.account_id in account_ids and row.entitlement_id in item_entitlements]
+        case_history = [row.model_dump() for row in scan.history
+                        if row.account_id in account_ids and (row.entitlement_id is None or row.entitlement_id in item_entitlements)]
         application_ids = {accounts[account_id].application_id for account_id in account_ids}
         application_ids |= {discovered[entitlement_id].application_id for entitlement_id in item_entitlements
                             if entitlement_id in discovered}
         evidence_refs = ([f'identity:{person_id}'] if person_id else []) + [f'account:{x}' for x in account_ids]
         evidence_refs += [f'item:{item["key"]}' for item in items]
         evidence_refs += [f'path:{x}' for x in sorted(case_path_ids)]
+        evidence_refs += [f'application:{x}' for x in sorted(application_ids)]
+        evidence_refs += [f'entitlement:{x}' for x in sorted(item_entitlements)]
+        evidence_refs += [f'assignment:{row.id}' for row in case_assignments]
+        for kind, rows in (('role', case_roles), ('group', case_groups),
+                           ('exception', case_exceptions), ('history', case_history)):
+            evidence_refs += [f'{kind}:{row["id"]}' for row in rows]
+        evidence_refs.append(f'scan:{scan.scan_id}')
         cases.append({
             'key': digest([scan.source, 'case', owner])[:32],
             'identity_id': person_id,
+            'review_context': {'reviewed_at': now.isoformat(), 'scanned_at': scan.scanned_at,
+                               'source': scan.source, 'scan_id': scan.scan_id,
+                               'complete': scan.complete, 'mapping_version': scan.mapping_version},
             'identity_context': bundle.context_for(person_id) if person_id else None,
             'accounts': [accounts[x].model_dump() for x in account_ids],
             'applications': [applications[x].model_dump() for x in sorted(application_ids)],
             'items': items,
             'assignments': [row.model_dump() for row in case_assignments],
             'grant_paths': case_paths,
-            'exceptions': [row.model_dump() for row in scan.exceptions
-                           if row.account_id in account_ids and row.entitlement_id in item_entitlements],
-            'history': [row.model_dump() for row in scan.history
-                        if row.account_id in account_ids and (row.entitlement_id is None or row.entitlement_id in item_entitlements)],
+            'roles': case_roles,
+            'groups': case_groups,
+            'exceptions': case_exceptions,
+            'history': case_history,
             'relevant_entitlements': [asdict(catalog[x]) if x in catalog else discovered[x].model_dump()
                                       for x in sorted(item_entitlements)],
             'evidence_refs': evidence_refs,

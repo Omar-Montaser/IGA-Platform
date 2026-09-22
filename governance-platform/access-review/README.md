@@ -27,8 +27,8 @@ and fresh scans.
 - Durable connector requests with leases and retry behavior.
 - Verification requiring a different, later, complete scan with the same
   source and mapping version and coverage of the target entitlement.
-- One independent review case per identity. When configured, the OpenAI
-  Responses reviewer receives the complete normalized case and independently
+- One independent review case per identity. When configured, Gemini (free-tier
+  default) or the optional OpenAI reviewer receives the complete normalized case and independently
   returns retain/remove/investigate/escalate assessments, confidence, evidence
   references, questions, missing evidence, reasoning, and per-item actions.
 - Explicit non-AI fallback when no provider is configured or a review fails.
@@ -79,6 +79,70 @@ provide connector tokens through the named environment variables, then run
 `iga-review serve`. Production identity-provider integration is intentionally
 not claimed by this prototype configuration.
 
+## Activate free-tier AI (Gemini)
+
+The default integration is **Gemini 3.8 Flash with high reasoning**, selected for
+strong reasoning and schema-constrained responses on a free API tier. This is
+not a claim that it wins every benchmark. Model and free-tier availability were
+checked on 2026-09-22 against Google's
+[model documentation](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)
+and [pricing](https://ai.google.dev/gemini-api/docs/pricing).
+
+On Windows, install into a working environment first (Python 3.11+):
+
+```powershell
+# From governance-platform/access-review. Skip installation if already installed.
+python -m venv .venv-ai
+.\.venv-ai\Scripts\python.exe -m pip install -e ../hr-policy -e .
+.\setup_gemini.ps1
+.\.venv-ai\Scripts\python.exe -m iga_review.cli demo --state-dir .demo-review/gemini
+```
+
+The setup script prompts privately for a [Google AI Studio key](https://aistudio.google.com/api-keys),
+keeps it only in the current PowerShell environment, and performs one real
+structured generation with synthetic evidence. It does not print/store the key,
+delete review history, or start a campaign automatically. Use `-Python <path>`
+to select another interpreter with Module 4 installed. Run the demo from this
+module's directory, in the same PowerShell session.
+
+Use a project **without billing enabled**. A model having a free tier does not
+make calls free when your key belongs to a billed project. The application
+cannot inspect billing status and never switches models or providers on quota
+failure. Free quota varies by project/region and is not unlimited. Calls are
+serialized and spaced at least six seconds apart; 429 responses open a 60-second
+cooldown and remaining cases receive an explicit non-AI fallback. Large campaigns
+can take several minutes or exceed free quota. No automatic retry/reassessment
+of persisted fallbacks is performed; import a fresh scan after quota recovers.
+
+Manual configuration is also supported:
+
+- `IGA_AI_PROVIDER=gemini`, `GEMINI_API_KEY` (or `GOOGLE_API_KEY`).
+- `IGA_AI_MODEL=gemini-3.8-flash` (the pinned default; no paid model routing).
+- `IGA_AI_INTERVAL_SECONDS=6` controls pacing (0–60 seconds).
+- `iga-review ai-check` succeeds only after a validated AI response, not merely
+  a successful authentication request. It returns nonzero on missing keys,
+  quota/authentication failures, or invalid output.
+- Without an explicit provider, `auto` selects Gemini only if a Gemini/Google
+  key exists; otherwise it uses clearly labeled rules. `IGA_AI_PROVIDER=rules`
+  disables external inference. The existing OpenAI adapter remains opt-in via
+  `IGA_AI_PROVIDER=openai`, `OPENAI_API_KEY`, and `IGA_AI_MODEL`; it is not free.
+
+**Data handling:** the entire person-level case is sent to Google, including
+identity/account data, justification, relevant roles/groups, history and
+exceptions. Free-tier data may be used to improve Google's products. Use
+synthetic data for this prototype. Non-demo startup requires explicit
+`IGA_AI_ALLOW_REAL_DATA=1` after obtaining data-owner approval; this flag is not
+an anonymization or compliance mechanism. `store=false` disables interaction
+retrieval storage, not Google's broader data-use terms. Keys never enter the UI,
+campaign exports, or the review database.
+
+Existing campaigns are immutable assessments: enabling AI does **not** rewrite
+their rules-only results. Use a new child directory under `.demo-review/` for a
+new synthetic campaign, or import a genuinely fresh normalized scan. The UI
+shows actual persisted provider/model/fallback information, not just the current
+server configuration. A ready response means it passed structural validation;
+it does not prove the assessment is correct. Humans retain decision authority.
+
 ## API flow
 
 1. An administrator imports one JSON object containing validated Module 1
@@ -104,7 +168,8 @@ in [contract.md](docs/contract.md). Design research is in
   stable synthetic fixture exist; live source discovery does not.
 - Background worker supervision, production database choice, backups,
   deployment manifests, metrics, rate limiting, and operational alerting.
-- Live OpenAI evaluation with an explicitly selected model and project key.
+- Live model evaluation using an authorized project key and labeled review cases
+  (mocked integration tests are not a quality or live-availability evaluation).
 - Comprehensive browser-based UI testing (current tests verify HTML structure,
   accessibility attributes, JavaScript security patterns, and API integration
   without requiring a browser runtime).

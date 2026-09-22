@@ -56,10 +56,13 @@ versioned triage heuristic rather than a probability or authorization result.
 
 ## Independent review
 
-Campaign creation invokes `review(case)` once for every case. The OpenAI
-reviewer sends the complete normalized case to the fixed Responses endpoint
-with tools disabled, `store=false`, bounded transport/output and strict
-structured output. It may independently return:
+Campaign creation invokes `review(case)` once for every case. Gemini uses the
+fixed Google Interactions endpoint with `gemini-3.8-flash`, high reasoning,
+JSON-schema output and `store=false`. The optional OpenAI reviewer uses the
+Responses endpoint. Neither provider has tools or decision/connector authority.
+Cases include relevant role/group definitions, scan/review timestamps and
+references for assignments, applications, entitlements, exceptions and history.
+Both providers validate structured results locally and may independently return:
 
 - case `recommended_action`: `retain|remove|investigate|escalate`;
 - confidence from 0 through 1;
@@ -70,7 +73,12 @@ structured output. It may independently return:
 The model is not forced to match deterministic constraints. Invalid, refused,
 incomplete or failed model responses become an explicit `provider: rules`,
 `status: fallback` result; fallback is never labeled as AI. Review cases and
-assessments are persisted and included in campaign export.
+assessments are persisted and included in campaign export. Successful results
+include `model`. Provider failures include `attempted_provider`, `model` and a
+sanitized `fallback_reason`; upstream error bodies and keys are never persisted.
+Evidence-reference lists must be nonempty and contain only supplied references.
+Free-tier quota failures are not retried against a paid model. See the README
+for activation, quota behavior, data handling and the synthetic `ai-check`.
 
 Mandatory human-review reasons are explicit data: `privileged_access`,
 `ai_engine_disagreement`, `low_ai_confidence`, `missing_evidence`,

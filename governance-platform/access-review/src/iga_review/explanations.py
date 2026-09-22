@@ -89,10 +89,8 @@ class RuleReviewer:
         return self.review(case)
 
 
-class OpenAIReviewer:
+class StructuredReviewer:
     """Review a complete identity case using strict structured output."""
-
-    provider = 'openai'
 
     def __init__(self, api_key, model, client=None):
         self._api_key, self.model, self._client = api_key, model, client
@@ -100,6 +98,8 @@ class OpenAIReviewer:
     def _fallback(self, case, reason):
         result = RuleReviewer().review(case)
         result['fallback_reason'] = reason
+        result['attempted_provider'] = self.provider
+        result['model'] = self.model
         return result
 
     def review(self, case):
@@ -142,42 +142,24 @@ class OpenAIReviewer:
             'required': ['recommended_action', 'confidence', 'evidence_refs', 'open_questions',
                          'missing_evidence', 'reasoning', 'item_assessments'],
         }
-        payload = {'model': self.model, 'instructions': _INSTRUCTIONS,
-                   'input': [{'role': 'user', 'content': json.dumps(evidence, sort_keys=True, allow_nan=False)}],
-                   'text': {'format': {'type': 'json_schema', 'name': 'identity_access_review',
-                                       'strict': True, 'schema': schema}},
-                   'store': False, 'max_output_tokens': 4000}
+        payload = self._payload(evidence, schema)
         try:
             if self._client is None:
                 with httpx.Client(timeout=_TIMEOUT, follow_redirects=False, trust_env=False) as client:
                     response = self._request(client, payload)
             else:
                 response = self._request(self._client, payload)
+        except httpx.HTTPStatusError as exc:
+            reasons = {401: 'authentication_failed', 403: 'access_denied',
+                       429: 'rate_limited', 404: 'model_unavailable'}
+            return self._fallback(case, reasons.get(exc.response.status_code, 'request_failed'))
         except (httpx.HTTPError, OSError, ValueError):
             return self._fallback(case, 'request_failed')
         try:
             if len(response.content) > _MAX_RESPONSE_BYTES:
                 raise _InvalidReview('invalid_response')
             body = _json(response.content)
-            if body.get('status') == 'incomplete':
-                return self._fallback(case, 'incomplete_response')
-            if body.get('status') != 'completed' or body.get('error') is not None:
-                raise _InvalidReview('invalid_response')
-            texts = []
-            for output in body.get('output', []):
-                if output.get('type') == 'reasoning':
-                    continue
-                if output.get('type') != 'message' or output.get('role', 'assistant') != 'assistant':
-                    raise _InvalidReview('invalid_response')
-                for content in output.get('content', []):
-                    if content.get('type') == 'refusal':
-                        return self._fallback(case, 'refused')
-                    if content.get('type') != 'output_text':
-                        raise _InvalidReview('invalid_response')
-                    texts.append(content.get('text'))
-            if len(texts) != 1:
-                raise _InvalidReview('invalid_response')
-            result = _json(texts[0])
+            result = _json(self._output_text(body))
             required = {'recommended_action', 'confidence', 'evidence_refs', 'open_questions',
                         'missing_evidence', 'reasoning', 'item_assessments'}
             if not isinstance(result, dict) or set(result) != required:
@@ -187,7 +169,9 @@ class OpenAIReviewer:
             for field in ('evidence_refs', 'open_questions', 'missing_evidence'):
                 if not isinstance(result[field], list) or not all(_text(x) for x in result[field]):
                     raise _InvalidReview('invalid_response')
-            if not set(result['evidence_refs']) <= set(refs) or not _text(result['reasoning']):
+            if not result['evidence_refs'] or not set(result['evidence_refs']) <= set(refs) or not _text(result['reasoning']):
+                raise _InvalidReview('invalid_response')
+            if not isinstance(result['item_assessments'], list):
                 raise _InvalidReview('invalid_response')
             seen = set()
             for assessment in result['item_assessments']:
@@ -196,6 +180,7 @@ class OpenAIReviewer:
                 if assessment['item_key'] not in item_keys or assessment['item_key'] in seen or assessment['action'] not in _ACTIONS:
                     raise _InvalidReview('invalid_response')
                 if (not isinstance(assessment['evidence_refs'], list)
+                        or not assessment['evidence_refs']
                         or not set(assessment['evidence_refs']) <= set(refs)
                         or not all(_text(x) for x in assessment['evidence_refs'])
                         or not _text(assessment['reasoning'])):
@@ -203,13 +188,47 @@ class OpenAIReviewer:
                 seen.add(assessment['item_key'])
             if seen != set(item_keys):
                 raise _InvalidReview('invalid_response')
-            return {'provider': self.provider, 'status': 'ready', **result}
+            return {'provider': self.provider, 'model': self.model, 'status': 'ready', **result}
+        except _InvalidReview as exc:
+            return self._fallback(case, str(exc))
         except (AttributeError, KeyError, TypeError, ValueError, RecursionError):
             return self._fallback(case, 'invalid_response')
 
     def explain(self, value):
         case = value if 'items' in value else {'items': [value], 'evidence_refs': [f'item:{value["key"]}']}
         return self.review(case)
+
+
+class OpenAIReviewer(StructuredReviewer):
+    provider = 'openai'
+
+    def _payload(self, evidence, schema):
+        return {'model': self.model, 'instructions': _INSTRUCTIONS,
+                'input': [{'role': 'user', 'content': json.dumps(evidence, sort_keys=True, allow_nan=False)}],
+                'text': {'format': {'type': 'json_schema', 'name': 'identity_access_review',
+                                    'strict': True, 'schema': schema}},
+                'store': False, 'max_output_tokens': 4000}
+
+    def _output_text(self, body):
+        if body.get('status') == 'incomplete':
+            raise _InvalidReview('incomplete_response')
+        if body.get('status') != 'completed' or body.get('error') is not None:
+            raise _InvalidReview('invalid_response')
+        texts = []
+        for output in body.get('output', []):
+            if output.get('type') == 'reasoning':
+                continue
+            if output.get('type') != 'message' or output.get('role', 'assistant') != 'assistant':
+                raise _InvalidReview('invalid_response')
+            for content in output.get('content', []):
+                if content.get('type') == 'refusal':
+                    raise _InvalidReview('refused')
+                if content.get('type') != 'output_text':
+                    raise _InvalidReview('invalid_response')
+                texts.append(content.get('text'))
+        if len(texts) != 1:
+            raise _InvalidReview('invalid_response')
+        return texts[0]
 
     def _request(self, client, payload):
         response = client.post(_ENDPOINT, json=payload,

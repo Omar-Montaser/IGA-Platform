@@ -1,5 +1,6 @@
 .DS_Store
 .venv/
+.venv-ai/
 __pycache__/
 *.py[cod]
 *.egg-info/
