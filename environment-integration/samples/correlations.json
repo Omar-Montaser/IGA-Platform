@@ -1,0 +1,343 @@
+{
+  "schema_version": "1.0.0",
+  "source": "linux-lab",
+  "generated_at": "2026-09-22T10:13:21Z",
+  "note": "Explicit account-to-HR bindings. Module 4 must not infer these from usernames; two identities share the name 'Alex Morgan' in this dataset.",
+  "correlations": [
+    {
+      "account_id": "linux-lab:ada.bennett.0001",
+      "identity_id": "id:person-0001",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:alex.morgan.0002",
+      "identity_id": "id:person-0002",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:zoe.bennett.0003",
+      "identity_id": "id:person-0003",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:casey.diaz.0004",
+      "identity_id": "id:person-0004",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:chen.evans.0005",
+      "identity_id": "id:person-0005",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:dara.farah.0006",
+      "identity_id": "id:person-0006",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:emi.gray.0007",
+      "identity_id": "id:person-0007",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:finley.hayes.0008",
+      "identity_id": "id:person-0008",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:harper.ibrahim.0009",
+      "identity_id": "id:person-0009",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:ira.jordan.0010",
+      "identity_id": "id:person-0010",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:jules.kim.0011",
+      "identity_id": "id:person-0011",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:kai.lane.0012",
+      "identity_id": "id:person-0012",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:lena.malik.0013",
+      "identity_id": "id:person-0013",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:alex.morgan.0014",
+      "identity_id": "id:person-0014",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:renee.nguyen.0015",
+      "identity_id": "id:person-0015",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:sam.reed.0016",
+      "identity_id": "id:person-0016",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:taylor.santos.0017",
+      "identity_id": "id:person-0017",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:zuri.bennett.0018",
+      "identity_id": "id:person-0018",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:ada.brooks.0019",
+      "identity_id": "id:person-0019",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:amir.carter.0020",
+      "identity_id": "id:person-0020",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:ana.diaz.0021",
+      "identity_id": "id:person-0021",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:chen.farah.0023",
+      "identity_id": "id:person-0023",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:dara.gray.0024",
+      "identity_id": "id:person-0024",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:emi.hayes.0025",
+      "identity_id": "id:person-0025",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:finley.ibrahim.0026",
+      "identity_id": "id:person-0026",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:harper.jordan.0027",
+      "identity_id": "id:person-0027",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:ira.kim.0028",
+      "identity_id": "id:person-0028",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:jules.lane.0029",
+      "identity_id": "id:person-0029",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:kai.malik.0030",
+      "identity_id": "id:person-0030",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:lena.nguyen.0031",
+      "identity_id": "id:person-0031",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:noor.patel.0032",
+      "identity_id": "id:person-0032",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:remy.reed.0033",
+      "identity_id": "id:person-0033",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:sam.santos.0034",
+      "identity_id": "id:person-0034",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:taylor.bennett.0035",
+      "identity_id": "id:person-0035",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:ada.carter.0037",
+      "identity_id": "id:person-0037",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:amir.diaz.0038",
+      "identity_id": "id:person-0038",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:ana.evans.0039",
+      "identity_id": "id:person-0039",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:casey.farah.0040",
+      "identity_id": "id:person-0040",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:chen.gray.0041",
+      "identity_id": "id:person-0041",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:dara.hayes.0042",
+      "identity_id": "id:person-0042",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:emi.ibrahim.0043",
+      "identity_id": "id:person-0043",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:finley.jordan.0044",
+      "identity_id": "id:person-0044",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:harper.kim.0045",
+      "identity_id": "id:person-0045",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:ira.lane.0046",
+      "identity_id": "id:person-0046",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:jules.malik.0047",
+      "identity_id": "id:person-0047",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:lena.patel.0049",
+      "identity_id": "id:person-0049",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:noor.reed.0050",
+      "identity_id": "id:person-0050",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:remy.santos.0051",
+      "identity_id": "id:person-0051",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:sam.bennett.0052",
+      "identity_id": "id:person-0052",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:taylor.brooks.0053",
+      "identity_id": "id:person-0053",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:zuri.carter.0054",
+      "identity_id": "id:person-0054",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:ada.diaz.0055",
+      "identity_id": "id:person-0055",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:amir.evans.0056",
+      "identity_id": "id:person-0056",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:ana.farah.0057",
+      "identity_id": "id:person-0057",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:casey.gray.0058",
+      "identity_id": "id:person-0058",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:chen.hayes.0059",
+      "identity_id": "id:person-0059",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:emi.jordan.0061",
+      "identity_id": "id:person-0061",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:finley.kim.0062",
+      "identity_id": "id:person-0062",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:harper.lane.0063",
+      "identity_id": "id:person-0063",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:ira.malik.0064",
+      "identity_id": "id:person-0064",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:jules.nguyen.0065",
+      "identity_id": "id:person-0065",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:kai.patel.0066",
+      "identity_id": "id:person-0066",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:lena.reed.0067",
+      "identity_id": "id:person-0067",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:noor.santos.0068",
+      "identity_id": "id:person-0068",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:remy.bennett.0069",
+      "identity_id": "id:person-0069",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:sam.brooks.0070",
+      "identity_id": "id:person-0070",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:taylor.carter.0071",
+      "identity_id": "id:person-0071",
+      "evidence": "account provisioned from HR identity by the lab seeder"
+    }
+  ]
+}
