@@ -14,7 +14,7 @@ MAX_BODY = 10 * 1024 * 1024
 
 
 def create_app(service):
-    app = FastAPI(title='IGA Access Review', version='1.0.0', docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title='IGA Access Review', version='2.0.0', docs_url=None, redoc_url=None, openapi_url=None)
     
     # Mount static files for the UI
     static_dir = Path(__file__).parent.parent.parent / 'static'
@@ -149,7 +149,7 @@ def create_app(service):
         return {
             'name': 'IGA Access Review API',
             'module': 4,
-            'version': '1.0.0',
+            'version': '2.0.0',
             'health': '/api/health',
             'status': 'core API ready; reviewer UI is available at /',
         }

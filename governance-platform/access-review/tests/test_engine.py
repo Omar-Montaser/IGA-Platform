@@ -63,21 +63,36 @@ def fixtures():
                 "status_rules": [{"status": status, "access": "role_policy" if status == "active" else "none"}
                                  for status in ("active", "on_leave", "pre_hire", "terminated")]}
     source = "example-directory"
+    application = {"id": "app:work", "name": "Example work platform",
+                   "criticality": "high", "source": source}
     accounts = [{"id": f"account:{row['username']}", "username": row["username"],
-                 "enabled": True, "source": source}
+                 "enabled": True, "source": source, "application_id": application["id"],
+                 "account_type": "human"}
                 for row in people if row["username"] != "unobserved"]
     scan_entitlements = [{key: value for key, value in row.items() if key != "description"}
-                        | {"source": source} for row in catalog]
+                        | {"source": source, "application_id": application["id"]} for row in catalog]
     scan_entitlements.append({"id": UNKNOWN, "name": "Unmapped source capability",
                               "type": "permission", "sensitivity": "unknown",
-                              "privileged": None, "source": source})
-    scan = {"schema_version": "1.0.0", "scan_id": "scan:initial", "source": source,
+                              "privileged": None, "source": source,
+                              "application_id": application["id"]})
+    paths = [{"id": f"path:{account['username']}:baseline", "account_id": account["id"],
+              "entitlement_id": BASELINE, "source": source,
+              "grant_type": "direct",
+              "path": [{"kind": "account", "ref": account["id"]},
+                       {"kind": "entitlement", "ref": BASELINE}]}
+             for account in accounts]
+    scan = {"schema_version": "2.0.0", "scan_id": "scan:initial", "source": source,
             "scanned_at": "2026-09-21T12:00:00Z", "complete": True,
             "mapping_version": "mapping-v1", "scope_entitlements": [row["id"] for row in scan_entitlements],
-            "request_id": None, "identities": accounts, "entitlements": scan_entitlements,
+            "request_id": None, "applications": [application], "identities": accounts,
+            "roles": [], "groups": [], "entitlements": scan_entitlements,
+            "grant_paths": paths, "exceptions": [], "history": [],
             "assignments": [{"id": f"assignment:{account['username']}:baseline",
                              "identity": account["id"], "entitlement": BASELINE, "source": source,
-                             "timestamp": "2026-09-21T11:00:00Z"} for account in accounts]}
+                             "timestamp": "2026-09-21T11:00:00Z",
+                             "grant_path_ids": [f"path:{account['username']}:baseline"],
+                             "business_justification": None, "exception_id": None}
+                            for account in accounts]}
     bindings = [{"account_id": account["id"], "identity_id": f"id:{account['username']}",
                  "evidence": "Independently verified immutable source account reference."}
                 for account in accounts]
@@ -94,9 +109,17 @@ class EngineAcceptanceTests(unittest.TestCase):
                         **({"config": config} if config is not None else {}))
 
     def grant(self, account="account:subject", entitlement=OPTIONAL, suffix="extra"):
+        path_id = f"path:{suffix}"
+        self.scan["grant_paths"].append({"id": path_id, "account_id": account,
+                                          "entitlement_id": entitlement, "source": self.scan["source"],
+                                          "grant_type": "direct",
+                                          "path": [{"kind": "account", "ref": account},
+                                                   {"kind": "entitlement", "ref": entitlement}]})
         self.scan["assignments"].append({"id": f"assignment:{suffix}", "identity": account,
                                          "entitlement": entitlement, "source": self.scan["source"],
-                                         "timestamp": "2026-09-21T11:00:00Z"})
+                                         "timestamp": "2026-09-21T11:00:00Z",
+                                         "grant_path_ids": [path_id], "business_justification": None,
+                                         "exception_id": None})
 
     def assignment(self, result, account="account:subject", entitlement=BASELINE):
         return next(row for row in result["findings"] if row["kind"] == "assignment"
@@ -107,9 +130,13 @@ class EngineAcceptanceTests(unittest.TestCase):
                 and row["identity_id"] == identity]
 
     def remove_grants(self, account, entitlement=None):
+        removed = {path for row in self.scan["assignments"]
+                   if row["identity"] == account and (entitlement is None or row["entitlement"] == entitlement)
+                   for path in row["grant_path_ids"]}
         self.scan["assignments"] = [row for row in self.scan["assignments"]
                                     if not (row["identity"] == account
                                             and (entitlement is None or row["entitlement"] == entitlement))]
+        self.scan["grant_paths"] = [row for row in self.scan["grant_paths"] if row["id"] not in removed]
 
     def profile(self):
         return next(row for row in self.policies["role_policies"]
@@ -121,7 +148,8 @@ class EngineAcceptanceTests(unittest.TestCase):
         self.assertTrue(result["actionable"])
         self.assertEqual(result["warnings"], [])
         self.assertEqual(finding["policy_result"], "expected")
-        self.assertEqual(finding["recommendation"], "certify")
+        self.assertNotIn("recommendation", finding)
+        self.assertEqual(finding["constraints"], [])
         self.assertEqual(finding["assignment_ids"], ["assignment:subject:baseline"])
         self.assertEqual(finding["evidence"]["scan_id"], self.scan["scan_id"])
 
@@ -141,7 +169,7 @@ class EngineAcceptanceTests(unittest.TestCase):
                 for entitlement in (BASELINE, FORBIDDEN, UNKNOWN):
                     finding = self.assignment(result, entitlement=entitlement)
                     self.assertEqual(finding["policy_result"], "lifecycle_restricted")
-                    self.assertEqual(finding["recommendation"], "revoke")
+                    self.assertEqual(finding["constraints"][0]["required_action"], "remove")
                 self.assertEqual(self.missing(result), [])
 
     def test_policy_categories_are_distinct(self):
@@ -158,7 +186,7 @@ class EngineAcceptanceTests(unittest.TestCase):
         finding = self.assignment(self.run_engine(), entitlement=OPTIONAL)
         self.assertEqual(finding["policy_result"], "unauthorized_privilege")
         self.assertTrue(finding["privileged"])
-        self.assertEqual(finding["recommendation"], "revoke")
+        self.assertEqual(finding["constraints"][0]["required_action"], "remove")
 
     def test_source_only_privilege_is_retained_for_unlisted_access(self):
         next(row for row in self.scan["entitlements"] if row["id"] == UNLISTED)["privileged"] = True
@@ -183,7 +211,7 @@ class EngineAcceptanceTests(unittest.TestCase):
         finding = self.assignment(self.run_engine())
         self.assertEqual(finding["sensitivity"], "critical")
         self.assertTrue(finding["privileged"])
-        self.assertEqual(finding["recommendation"], "review")
+        self.assertNotIn("recommendation", finding)
 
     def test_unknown_source_privilege_remains_unknown(self):
         self.grant(entitlement=UNKNOWN)
@@ -214,7 +242,7 @@ class EngineAcceptanceTests(unittest.TestCase):
         next(row for row in self.scan["identities"] if row["id"] == "account:subject")["enabled"] = False
         finding = self.assignment(self.run_engine())
         self.assertIn("disabled_account_grants", {row["code"] for row in finding["signals"]})
-        self.assertEqual(finding["recommendation"], "review")
+        self.assertNotIn("recommendation", finding)
 
     def test_matching_or_reused_username_never_creates_binding(self):
         self.bindings = [row for row in self.bindings if row["account_id"] != "account:subject"]
@@ -265,7 +293,8 @@ class EngineAcceptanceTests(unittest.TestCase):
     def test_multiple_accounts_use_union_for_missing_baseline(self):
         self.remove_grants("account:subject")
         self.scan["identities"].append({"id": "account:secondary", "username": "alternate-login",
-                                       "enabled": True, "source": self.scan["source"]})
+                                       "enabled": True, "source": self.scan["source"],
+                                       "application_id": "app:work", "account_type": "human"})
         self.bindings.append({"account_id": "account:secondary", "identity_id": "id:subject",
                               "evidence": "Separate immutable account reference for the same person."})
         self.grant(account="account:secondary", entitlement=BASELINE)
@@ -282,6 +311,7 @@ class EngineAcceptanceTests(unittest.TestCase):
         self.scan["entitlements"] = [row for row in self.scan["entitlements"] if row["id"] != BASELINE]
         self.scan["scope_entitlements"].remove(BASELINE)
         self.scan["assignments"] = [row for row in self.scan["assignments"] if row["entitlement"] != BASELINE]
+        self.scan["grant_paths"] = [row for row in self.scan["grant_paths"] if row["entitlement_id"] != BASELINE]
         self.assertEqual(self.missing(self.run_engine()), [])
 
     def test_peers_count_other_comparable_observed_people(self):
@@ -294,7 +324,8 @@ class EngineAcceptanceTests(unittest.TestCase):
     def test_peer_denominator_deduplicates_multiple_accounts_and_uses_union(self):
         self.grant()
         self.scan["identities"].append({"id": "account:peer-secondary", "username": "peer-alternate",
-                                       "enabled": True, "source": self.scan["source"]})
+                                       "enabled": True, "source": self.scan["source"],
+                                       "application_id": "app:work", "account_type": "human"})
         self.bindings.append({"account_id": "account:peer-secondary", "identity_id": "id:peer-1",
                               "evidence": "Verified secondary account."})
         self.grant(account="account:peer-secondary", suffix="peer-secondary")
@@ -316,7 +347,7 @@ class EngineAcceptanceTests(unittest.TestCase):
         self.assertEqual(finding["policy_result"], "permitted_privileged")
         self.assertEqual(finding["peer"]["holders"], 0)
         self.assertIn("peer_rare", {row["code"] for row in finding["signals"]})
-        self.assertEqual(finding["recommendation"], "review")
+        self.assertNotIn("recommendation", finding)
 
     def test_peer_agreement_never_overrides_restriction(self):
         for number, account in enumerate(["account:subject"] + [f"account:peer-{i}" for i in range(1, 6)]):
@@ -324,12 +355,13 @@ class EngineAcceptanceTests(unittest.TestCase):
         finding = self.assignment(self.run_engine(), entitlement=FORBIDDEN)
         self.assertEqual(finding["peer"]["ratio"], 1.0)
         self.assertEqual(finding["policy_result"], "restricted")
-        self.assertEqual(finding["recommendation"], "revoke")
+        self.assertEqual(finding["constraints"][0]["required_action"], "remove")
 
     def test_ambiguous_secondary_account_suppresses_false_absence(self):
         self.remove_grants("account:subject")
         self.scan["identities"].append({"id": "account:disputed", "username": "disputed",
-                                       "enabled": True, "source": self.scan["source"]})
+                                       "enabled": True, "source": self.scan["source"],
+                                       "application_id": "app:work", "account_type": "shared"})
         for identity in ("id:subject", "id:peer-1"):
             self.bindings.append({"account_id": "account:disputed", "identity_id": identity,
                                   "evidence": "Conflicting immutable reference."})
@@ -338,7 +370,8 @@ class EngineAcceptanceTests(unittest.TestCase):
 
     def test_subject_involved_in_secondary_ambiguity_has_no_peer_inference(self):
         self.scan["identities"].append({"id": "account:disputed", "username": "disputed",
-                                       "enabled": True, "source": self.scan["source"]})
+                                       "enabled": True, "source": self.scan["source"],
+                                       "application_id": "app:work", "account_type": "shared"})
         for identity in ("id:subject", "id:contractor"):
             self.bindings.append({"account_id": "account:disputed", "identity_id": identity,
                                   "evidence": "Conflicting immutable reference."})
@@ -350,7 +383,8 @@ class EngineAcceptanceTests(unittest.TestCase):
 
     def test_ambiguous_secondary_account_excludes_candidate_from_peer_denominator(self):
         self.scan["identities"].append({"id": "account:disputed", "username": "disputed",
-                                       "enabled": True, "source": self.scan["source"]})
+                                       "enabled": True, "source": self.scan["source"],
+                                       "application_id": "app:work", "account_type": "shared"})
         for identity in ("id:peer-1", "id:contractor"):
             self.bindings.append({"account_id": "account:disputed", "identity_id": identity,
                                   "evidence": "Conflicting immutable reference."})
@@ -415,11 +449,12 @@ class DomainAcceptanceTests(unittest.TestCase):
         _, _, self.scan, self.bindings = fixtures()
 
     def test_empty_complete_scan_is_valid(self):
-        self.scan.update(identities=[], entitlements=[], assignments=[], scope_entitlements=[])
+        self.scan.update(applications=[], identities=[], roles=[], groups=[], entitlements=[],
+                         grant_paths=[], assignments=[], exceptions=[], history=[], scope_entitlements=[])
         Scan.model_validate(self.scan)
 
     def test_scan_rejects_unknown_fields_and_type_coercion(self):
-        for change in ({"extra": True}, {"complete": "true"}, {"schema_version": "2.0.0"},
+        for change in ({"extra": True}, {"complete": "true"}, {"schema_version": "1.0.0"},
                        {"scope_entitlements": "not-an-array"}, {"request_id": 1}):
             with self.subTest(change=change):
                 with self.assertRaises(ValidationError):
@@ -434,7 +469,7 @@ class DomainAcceptanceTests(unittest.TestCase):
                     Scan.model_validate(changed)
 
     def test_duplicate_object_ids_are_rejected(self):
-        for collection in ("identities", "entitlements", "assignments"):
+        for collection in ("applications", "identities", "entitlements", "grant_paths", "assignments"):
             with self.subTest(collection=collection):
                 changed = copy.deepcopy(self.scan)
                 changed[collection].append(copy.deepcopy(changed[collection][0]))

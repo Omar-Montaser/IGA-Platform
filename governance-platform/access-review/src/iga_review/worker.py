@@ -3,6 +3,7 @@ import json
 import logging
 import signal
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -51,8 +52,9 @@ class RemediationWorker:
         self.shutdown_requested = False
         
         # Register signal handlers
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGINT, self._signal_handler)
+            signal.signal(signal.SIGTERM, self._signal_handler)
         
         logger.info('Remediation worker starting', extra={
             'poll_interval': self.config.poll_interval_seconds,
@@ -152,7 +154,7 @@ class RemediationWorker:
                     'SELECT r.id FROM requests r '
                     'JOIN findings f ON f.id=r.finding_id '
                     'WHERE f.campaign_id=? AND r.state IN (?,?,?) '
-                    'ORDER BY rowid ASC',
+                    'ORDER BY r.rowid ASC',
                     (campaign_id, 'queued', 'dispatching', 'verification_pending')
                 ).fetchall()
             
@@ -190,6 +192,10 @@ class RemediationWorker:
         self.current_request_id = request_id
         
         try:
+            with self.service.store.read() as conn:
+                prior = conn.execute('SELECT state FROM requests WHERE id=?', (request_id,)).fetchone()
+            if prior is None or prior['state'] not in ('queued', 'dispatching', 'verification_pending'):
+                return False
             # Use the existing service._work method which handles:
             # - Lease acquisition
             # - Authorization checks

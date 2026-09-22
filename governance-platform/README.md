@@ -7,6 +7,7 @@ backend services, and the frontend application.
 It provides the validated identity and policy files consumed by Module 4.
 
 [Module 4 access review](access-review/README.md) now provides the review
-engine, guarded explanation layer, authenticated API, durable decision and
+engine, independent person-level AI review, deterministic safety constraints,
+authenticated reviewer UI/API, durable decision and exact grant-path
 remediation workflow, fresh-scan verification, audit trail, CLI, and tests.
-The reviewer UI and live Module 3 connector integration remain follow-on work.
+Live Module 3 connector integration remains follow-on work.

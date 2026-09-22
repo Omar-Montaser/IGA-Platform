@@ -66,8 +66,17 @@ class FixtureConnector:
             state = json.loads(conn.execute('SELECT payload FROM state WHERE id=1').fetchone()[0])
             if request['source'] != state['source'] or request['mapping_version'] != state['mapping_version'] or request['entitlement'] not in state['scope_entitlements']:
                 raise InputError('Approved target does not match the simulated source scope.')
+            current = [assignment for assignment in state['assignments']
+                       if assignment['identity'] == request['identity']
+                       and assignment['entitlement'] == request['entitlement']]
+            removed_paths = {path_id for assignment in current for path_id in assignment['grant_path_ids']}
+            if set(request.get('assignment_ids', ())) != {assignment['id'] for assignment in current}:
+                raise InputError('Approved assignment targets no longer match the source.')
+            if set(request.get('grant_path_ids', ())) != removed_paths:
+                raise InputError('Approved grant-path targets no longer match the source.')
             state['assignments'] = [a for a in state['assignments'] if not
                                     (a['identity'] == request['identity'] and a['entitlement'] == request['entitlement'])]
+            state['grant_paths'] = [path for path in state['grant_paths'] if path['id'] not in removed_paths]
             conn.execute('UPDATE state SET payload=? WHERE id=1', (canonical(state),))
             response = {'request_id': request['request_id'], 'status': 'succeeded', 'message': 'Simulated removal accepted; a separate fixture scan is required.'}
             conn.execute('INSERT INTO receipts VALUES(?,?,?)', (request['request_id'], digest(request), canonical(response)))

@@ -9,8 +9,10 @@ from uuid import uuid4
 from iga_hr import validate_documents
 from .domain import CampaignInput, DecisionInput, EngineConfig, InputError, Scan, canonical, digest, instant, timestamp, utcnow
 from .engine import ENGINE_VERSION, evaluate, evidence_warnings
-from .explanations import RuleExplainer
+from .explanations import RuleReviewer
 from .store import Store
+
+MIN_AI_CONFIDENCE = 0.7
 
 
 class ServiceError(Exception):
@@ -37,7 +39,8 @@ class ReviewService:
             raise ValueError('Fallback reviewer is not configured')
         self.fallback = fallback_reviewer_id
         self.connectors = connectors or {}
-        self.explainer = explainer or RuleExplainer()
+        self.reviewer = explainer or RuleReviewer()
+        self.explainer = self.reviewer
         self.config, self.clock, self.demo = config, clock, demo
 
     def authenticate(self, token):
@@ -76,6 +79,34 @@ class ReviewService:
             warnings.append('This campaign was superseded by a newer imported review for this source.')
         return warnings
 
+    def _review_cases(self, cases):
+        results = []
+        for case in cases:
+            try:
+                assessment = self.reviewer.review(case)
+            except Exception:
+                assessment = RuleReviewer().review(case)
+                assessment['fallback_reason'] = 'reviewer_failed'
+            assessments = {row['item_key']: row for row in assessment['item_assessments']}
+            reasons = set()
+            if assessment['status'] != 'ready':
+                reasons.add('ai_fallback')
+            if assessment['confidence'] < MIN_AI_CONFIDENCE:
+                reasons.add('low_ai_confidence')
+            if assessment['missing_evidence']:
+                reasons.add('missing_evidence')
+            for item in case['items']:
+                if item['privileged']:
+                    reasons.add('privileged_access')
+                proposed = assessments[item['key']]['action']
+                for constraint in item['constraints']:
+                    if constraint['effect'] == 'non_discretionary':
+                        reasons.add('non_discretionary_constraint')
+                        if proposed != constraint['required_action']:
+                            reasons.add('ai_engine_disagreement')
+            results.append(('case:' + str(uuid4()), case, assessment, sorted(reasons)))
+        return results
+
     def _finding(self, row, actor, warnings):
         item = json.loads(row['payload_json'])
         self_review = bool(actor.hr_identity_id and actor.hr_identity_id == item['identity_id'])
@@ -98,6 +129,13 @@ class ReviewService:
         fingerprint = digest({'inputs': content, 'engine': ENGINE_VERSION, 'configuration': asdict(self.config)})
         now = timestamp(self.clock())
         campaign_id = 'review:' + str(uuid4())
+        with self.store.read() as conn:
+            duplicate = conn.execute('SELECT id FROM campaigns WHERE input_digest=?', (fingerprint,)).fetchone()
+        if duplicate:
+            return self.get_campaign(duplicate['id'], actor)
+        # Provider calls happen outside the write transaction. Results are
+        # validated/fallback-complete before any campaign state is committed.
+        case_results = self._review_cases(result['cases'])
         with self.store.transaction() as conn:
             duplicate = conn.execute('SELECT id FROM campaigns WHERE input_digest=?', (fingerprint,)).fetchone()
             if duplicate:
@@ -116,17 +154,39 @@ class ReviewService:
                         raise ServiceError(409, 'older_snapshot', 'An older scan or HR snapshot cannot replace the current source review.')
                 conn.execute('INSERT OR IGNORE INTO scans VALUES(?,?,?)', (inputs.scan.source, inputs.scan.scan_id, digest(inputs.scan.model_dump())))
                 metadata = {'warnings': result['warnings'], 'actionable': result['actionable'], 'engine_version': ENGINE_VERSION,
-                            'engine_config': asdict(self.config), 'input_digests': {k: digest(content[k]) for k in ('identities', 'policies', 'scan', 'correlations')}}
+                             'engine_config': asdict(self.config), 'input_digests': {k: digest(content[k]) for k in ('identities', 'policies', 'scan', 'correlations')}}
+                metadata['review'] = {'cases': len(case_results),
+                                      'providers': sorted({assessment['provider'] for _, _, assessment, _ in case_results}),
+                                      'fallback_cases': sum(assessment['status'] != 'ready' for _, _, assessment, _ in case_results),
+                                      'low_confidence_threshold': MIN_AI_CONFIDENCE}
                 conn.execute('INSERT INTO campaigns(id,name,source,created_at,inputs_json,raw_json,input_digest,metadata_json) VALUES(?,?,?,?,?,?,?,?)',
                              (campaign_id, inputs.name, inputs.scan.source, now, canonical(content), raw_json or canonical(content), fingerprint, canonical(metadata)))
                 conn.execute('UPDATE campaigns SET superseded_by=? WHERE source=? AND id<>? AND superseded_by IS NULL', (campaign_id, inputs.scan.source, campaign_id))
-                for finding in result['findings']:
-                    finding_id = 'item:' + str(uuid4())
-                    reviewer, routing = self._route(finding, bundle)
-                    conn.execute('INSERT INTO findings(id,campaign_id,payload_json,reviewer_id,routing_reason,explanation_json) VALUES(?,?,?,?,?,?)',
-                                 (finding_id, campaign_id, canonical(finding), reviewer, routing, canonical(RuleExplainer().explain(finding))))
+                finding_count = 0
+                for case_id, case, assessment, reasons in case_results:
+                    conn.execute('INSERT INTO review_cases VALUES(?,?,?,?,?,?)',
+                                 (case_id, campaign_id, canonical(case), canonical(assessment),
+                                  bool(reasons), canonical(reasons)))
+                    item_assessments = {row['item_key']: row for row in assessment['item_assessments']}
+                    for finding in case['items']:
+                        proposed = item_assessments[finding['key']]['action']
+                        item_reasons = set(reasons)
+                        finding = {**finding, 'case_id': case_id, 'case_assessment': assessment,
+                                   'item_assessment': item_assessments[finding['key']],
+                                   'recommended_action': proposed,
+                                   'recommendation': {'retain': 'certify', 'remove': 'revoke',
+                                                      'investigate': 'review', 'escalate': 'review'}[proposed],
+                                   'mandatory_human_review': bool(item_reasons),
+                                   'human_review_reasons': sorted(item_reasons)}
+                        finding_id = 'item:' + str(uuid4())
+                        reviewer, routing = self._route(finding, bundle)
+                        conn.execute('INSERT INTO findings(id,campaign_id,payload_json,reviewer_id,routing_reason,explanation_json) VALUES(?,?,?,?,?,?)',
+                                     (finding_id, campaign_id, canonical(finding), reviewer, routing, canonical(assessment)))
+                        finding_count += 1
                 self.store.audit(conn, campaign_id, None, now, actor.id, 'campaign_imported',
-                                 {'input_digest': fingerprint, 'source': inputs.scan.source, 'findings': len(result['findings']), 'warnings': result['warnings']})
+                                 {'input_digest': fingerprint, 'source': inputs.scan.source,
+                                  'cases': len(case_results), 'findings': finding_count,
+                                  'warnings': result['warnings']})
         return self.get_campaign(campaign_id, actor)
 
     def get_campaign(self, campaign_id, actor):
@@ -192,6 +252,11 @@ class ReviewService:
                 raise ServiceError(403, 'decision_blocked', 'Evidence, reviewer routing, or self-review restrictions block this decision.')
             if decision.action not in finding['allowed_actions']:
                 raise ServiceError(422, 'invalid_action', 'This action does not apply to this item.')
+            required = {constraint['required_action'] for constraint in finding['constraints']
+                        if constraint['effect'] == 'non_discretionary'}
+            requested = {'certify': 'retain', 'revoke': 'remove', 'acknowledge': 'investigate'}[decision.action]
+            if required and requested not in required:
+                raise ServiceError(422, 'hard_constraint', 'The requested decision conflicts with a non-discretionary policy constraint.')
             if decision.action == 'certify' and finding['recommendation'] != 'certify' and not decision.acknowledge_risk:
                 raise ServiceError(422, 'risk_acknowledgement', 'Acknowledge the recorded risk before certifying this access.')
             decision_id = 'decision:' + str(uuid4())
@@ -206,20 +271,15 @@ class ReviewService:
                 request = {'request_id': request_id, 'source': finding['source'], 'identity': finding['account_id'],
                            'entitlement': finding['entitlement_id'], 'approved_by': actor.id, 'approved_at': now,
                            'reason': decision.reason, 'scan_id': finding['evidence']['scan_id'],
-                           'mapping_version': finding['evidence']['mapping_version'], 'assignment_ids': finding['assignment_ids']}
+                           'mapping_version': finding['evidence']['mapping_version'],
+                           'assignment_ids': finding['assignment_ids'], 'grant_path_ids': finding['grant_path_ids']}
                 conn.execute('INSERT INTO requests(id,finding_id,state,payload_json) VALUES(?,?,?,?)', (request_id, finding_id, 'queued', canonical(request)))
             self.store.audit(conn, row['campaign_id'], finding_id, now, actor.id, 'decision_recorded', result)
         return result
 
     def explain(self, finding_id, actor):
         finding = self.get_finding(finding_id, actor)
-        explanation = self.explainer.explain(finding)
-        with self.store.transaction() as conn:
-            row = self._require_row(conn, finding_id, actor)
-            conn.execute('UPDATE findings SET explanation_json=? WHERE id=?', (canonical(explanation), finding_id))
-            self.store.audit(conn, row['campaign_id'], finding_id, timestamp(self.clock()), actor.id, 'explanation_generated',
-                             {'provider': explanation['provider'], 'status': explanation['status']})
-        return explanation
+        return finding['explanation']
 
     def process(self, campaign_id, actor):
         self._admin(actor)
@@ -321,6 +381,9 @@ class ReviewService:
             return 'Verification scan does not completely cover the target capability.'
         if any(a.identity == request['identity'] and a.entitlement == request['entitlement'] for a in scan.assignments):
             return 'The capability still exists on the target account.'
+        remaining_paths = {path.id for path in scan.grant_paths}
+        if remaining_paths.intersection(request.get('grant_path_ids', ())):
+            return 'An approved grant path still exists on the target account.'
         return None
 
     def _finish(self, conn, row, state, error=None, evidence=None):
@@ -356,5 +419,10 @@ class ReviewService:
             for r in conn.execute('SELECT r.* FROM requests r JOIN findings f ON f.id=r.finding_id WHERE f.campaign_id=?', (campaign_id,)):
                 requests.append({'request': json.loads(r['payload_json']), 'state': r['state'], 'error': r['last_error'],
                                  'verification': json.loads(r['verification_json']) if r['verification_json'] else None})
+            cases = [{'case': json.loads(r['payload_json']), 'assessment': json.loads(r['assessment_json']),
+                      'mandatory_human_review': bool(r['mandatory_human_review']),
+                      'human_review_reasons': json.loads(r['human_review_reasons_json'])}
+                     for r in conn.execute('SELECT * FROM review_cases WHERE campaign_id=?', (campaign_id,))]
         return {'campaign': campaign, 'inputs': json.loads(row['inputs_json']), 'raw_import': row['raw_json'],
-                'input_digest': row['input_digest'], 'decisions': decisions, 'requests': requests, 'audit': self.audit(campaign_id, actor)}
+                'input_digest': row['input_digest'], 'cases': cases, 'decisions': decisions,
+                'requests': requests, 'audit': self.audit(campaign_id, actor)}

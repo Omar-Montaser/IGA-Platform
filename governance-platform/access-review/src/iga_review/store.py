@@ -6,13 +6,17 @@ from .domain import canonical, digest
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS meta(version INTEGER NOT NULL);
-INSERT INTO meta SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM meta);
+INSERT INTO meta SELECT 2 WHERE NOT EXISTS(SELECT 1 FROM meta);
 CREATE TABLE IF NOT EXISTS campaigns(
  id TEXT PRIMARY KEY, name TEXT NOT NULL, source TEXT NOT NULL,
  created_at TEXT NOT NULL, inputs_json TEXT NOT NULL, raw_json TEXT NOT NULL,
  input_digest TEXT NOT NULL UNIQUE, metadata_json TEXT NOT NULL, superseded_by TEXT);
 CREATE TABLE IF NOT EXISTS scans(source TEXT NOT NULL, scan_id TEXT NOT NULL,
  digest TEXT NOT NULL, PRIMARY KEY(source,scan_id));
+CREATE TABLE IF NOT EXISTS review_cases(
+ id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL REFERENCES campaigns(id),
+ payload_json TEXT NOT NULL, assessment_json TEXT NOT NULL,
+ mandatory_human_review INTEGER NOT NULL, human_review_reasons_json TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS findings(
  id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL REFERENCES campaigns(id),
  payload_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
@@ -42,6 +46,7 @@ CREATE TRIGGER IF NOT EXISTS decision_no_update BEFORE UPDATE ON decisions
 CREATE TRIGGER IF NOT EXISTS decision_no_delete BEFORE DELETE ON decisions
  BEGIN SELECT RAISE(ABORT,'decisions are immutable'); END;
 CREATE INDEX IF NOT EXISTS findings_campaign ON findings(campaign_id);
+CREATE INDEX IF NOT EXISTS cases_campaign ON review_cases(campaign_id);
 CREATE INDEX IF NOT EXISTS audit_campaign ON audit(campaign_id,seq);
 '''
 
@@ -53,7 +58,11 @@ class Store:
         with closing(self.connect()) as conn:
             conn.execute('PRAGMA journal_mode=WAL')
             conn.executescript(SCHEMA)
-            if conn.execute('SELECT version FROM meta').fetchone()[0] != 1:
+            version = conn.execute('SELECT version FROM meta').fetchone()[0]
+            if version == 1:
+                conn.execute('UPDATE meta SET version=2')
+                version = 2
+            if version != 2:
                 raise ValueError('Unsupported database schema version')
 
     def connect(self):

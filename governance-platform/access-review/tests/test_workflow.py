@@ -96,11 +96,37 @@ class WorkflowTests(Case):
         with ThreadPoolExecutor(max_workers=2) as pool:values=list(pool.map(attempt,[1,2]))
         self.assertEqual(sum(isinstance(x,dict) for x in values),1);self.assertIn(409,values)
         self.assertEqual(len(self.export()['decisions']),1)
-    def test_risky_certification_requires_acknowledgement(self):
+    def test_non_discretionary_constraint_cannot_be_overridden_by_acknowledgement(self):
         self.error(422,lambda:self.decide(action='certify'))
-        self.decide(action='certify',acknowledge_risk=True)
-        self.assertEqual(self.service.get_finding(self.target['id'],self.admin)['status'],'certified')
+        self.error(422,lambda:self.decide(action='certify',acknowledge_risk=True))
+        self.assertEqual(self.service.get_finding(self.target['id'],self.admin)['status'],'pending')
         self.assertEqual(self.export()['requests'],[])
+
+    def test_ai_engine_disagreement_is_preserved_and_requires_human_review(self):
+        class DisagreeingReviewer:
+            calls=0
+            def review(inner,case):
+                inner.calls+=1
+                rows=[{'item_key':item['key'],'action':'retain',
+                       'evidence_refs':[f"item:{item['key']}"],
+                       'reasoning':'Recorded context supports retaining access.'} for item in case['items']]
+                return {'provider':'test-ai','status':'ready','recommended_action':'retain','confidence':0.9,
+                        'evidence_refs':[ref for ref in case['evidence_refs'] if ref.startswith('item:')],
+                        'open_questions':[],'missing_evidence':[],
+                        'reasoning':'Independent person-level review supports retention.',
+                        'item_assessments':rows}
+        reviewer=DisagreeingReviewer()
+        service=ReviewService(self.root/'disagreement.db',self.users,fallback_reviewer_id='admin',
+                              connectors={'prototype-system':self.connector},clock=lambda:self.now,
+                              explainer=reviewer)
+        campaign=service.create_campaign(self.payload,self.admin)
+        target=next(f for f in campaign['findings'] if f['account_id']=='acct:person-0005'
+                    and f['entitlement_id']=='ent:engineering:production-deploy')
+        self.assertEqual(target['recommended_action'],'retain')
+        self.assertTrue(target['mandatory_human_review'])
+        self.assertIn('ai_engine_disagreement',target['human_review_reasons'])
+        self.assertIn('non_discretionary_constraint',target['human_review_reasons'])
+        self.assertEqual(reviewer.calls,campaign['metadata']['review']['cases'])
     def test_missing_access_only_allows_acknowledgement(self):
         missing=next(f for f in self.campaign['findings'] if f['kind']=='missing_access')
         self.error(422,lambda:self.decide(item=missing))
@@ -133,7 +159,7 @@ class WorkflowTests(Case):
         result=self.process()[0];self.assertEqual(result['state'],'verification_failed')
         self.assertIn('still exists',result['error']);self.assertIsNotNone(self.export()['requests'][0]['verification'])
     def test_wrong_stale_partial_mapping_or_reused_verification_fails(self):
-        request=dict(source='prototype-system',identity=self.target['account_id'],entitlement=self.target['entitlement_id'],scan_id=self.payload['scan']['scan_id'],mapping_version='demo-mapping-1',approved_at=timestamp(self.now))
+        request=dict(source='prototype-system',identity=self.target['account_id'],entitlement=self.target['entitlement_id'],scan_id=self.payload['scan']['scan_id'],mapping_version=self.payload['scan']['mapping_version'],approved_at=timestamp(self.now))
         fresh=deepcopy(self.payload['scan']);fresh.update(scan_id='scan:fresh',request_id='rescan:expected',scanned_at=timestamp(self.now+timedelta(seconds=1)))
         fresh['assignments']=[a for a in fresh['assignments'] if not(a['identity']==request['identity'] and a['entitlement']==request['entitlement'])]
         for field,value in [('request_id','rescan:wrong'),('mapping_version','other'),('scan_id',request['scan_id']),('scanned_at',timestamp(self.now)),('complete',False)]:

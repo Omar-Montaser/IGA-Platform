@@ -1,9 +1,10 @@
-"""Deterministic policy, peer and heuristic risk evaluation; no side effects."""
+"""Deterministic policy facts and safety constraints; no access verdicts."""
+from dataclasses import asdict
 from collections import defaultdict
 from datetime import datetime, timezone
 from .domain import EngineConfig, InputError, digest, instant
 
-ENGINE_VERSION = '1.0.0'
+ENGINE_VERSION = '2.0.0'
 SENSITIVITY = {'unknown': 20, 'low': 0, 'medium': 5, 'high': 10, 'critical': 20}
 POINTS = {'expected': 0, 'permitted_privileged': 10, 'restricted': 65,
           'lifecycle_restricted': 75, 'unauthorized_privilege': 65, 'unlisted': 30,
@@ -63,6 +64,9 @@ def evaluate(bundle, scan, correlations, *, now, config=EngineConfig()):
         binding_evidence[binding.account_id].append(binding.model_dump())
     ambiguous_people = {p for ids in candidates.values() if len(ids) > 1 for p in ids}
     bound = {a: next(iter(ids)) for a, ids in candidates.items() if len(ids) == 1}
+    assignments = {x.id: x for x in scan.assignments}
+    paths = {x.id: x for x in scan.grant_paths}
+    applications = {x.id: x for x in scan.applications}
     grants, person_grants, person_accounts = defaultdict(list), defaultdict(set), defaultdict(set)
     for account_id, person_id in bound.items():
         person_accounts[person_id].add(account_id)
@@ -110,14 +114,37 @@ def evaluate(bundle, scan, correlations, *, now, config=EngineConfig()):
             else:
                 peer['reason'] = ('Ambiguous linked-account coverage.' if person.id in ambiguous_people else 'Insufficient comparable peers.') if actionable else 'Evidence quality does not support peer inference.'
         score = min(100, sum(s['points'] for s in signals))
-        if result in ('restricted', 'lifecycle_restricted', 'unauthorized_privilege'):
-            recommendation = 'revoke'
-        elif result in ('expected', 'permitted_privileged') and all(s['code'] not in ('catalog_mismatch', 'peer_rare', 'disabled_account_grants') for s in signals):
-            recommendation = 'certify'
-        else:
-            recommendation = 'review' if kind == 'assignment' else 'acknowledge'
+        policy = policies.get((person.department, person.role)) if person else None
+        policy_id = policy.id if policy else 'unresolved-policy'
+        person_status = person.status if person else 'unknown'
+        policy_text = {
+            'expected': f'{entitlement_id} is expected for role policy {policy_id}.',
+            'permitted_privileged': f'{entitlement_id} is listed as optional privileged access by role policy {policy_id}.',
+            'restricted': f'{entitlement_id} is explicitly restricted by role policy {policy_id}.',
+            'lifecycle_restricted': f'Lifecycle rule for status {person_status} permits no access.',
+            'unauthorized_privilege': f'{entitlement_id} is privileged but is not permitted by role policy {policy_id}.',
+            'unlisted': f'{entitlement_id} is not listed by role policy {policy_id}; unlisted access requires review.',
+            'unknown_entitlement': f'{entitlement_id} is absent from the authoritative policy catalog.',
+            'unmatched': 'No supplied correlation binds this source account to an HR identity.',
+            'ambiguous': 'More than one supplied correlation claims this source account.',
+            'missing_expected': f'{entitlement_id} is expected by role policy {policy_id} but was not observed in complete scope.',
+            'coverage_gap': 'Evidence quality rules block decisions until complete, fresh evidence is supplied.',
+        }[result]
+        constraints = []
         if warnings:
-            recommendation = 'review'
+            constraints.append({'code': 'evidence_not_actionable', 'effect': 'decision_blocked',
+                                'required_action': None, 'text': 'No access decision may execute against stale or incomplete evidence.'})
+        if result in ('restricted', 'lifecycle_restricted', 'unauthorized_privilege'):
+            constraints.append({'code': 'hard_policy_remove', 'effect': 'non_discretionary',
+                                'required_action': 'remove', 'text': policy_text})
+        if result in ('unmatched', 'ambiguous'):
+            constraints.append({'code': 'ownership_unresolved', 'effect': 'decision_blocked',
+                                'required_action': 'investigate', 'text': 'Resolve account ownership before changing access.'})
+        if privileged:
+            constraints.append({'code': 'privileged_human_review', 'effect': 'mandatory_human_review',
+                                'required_action': None, 'text': 'Privileged access must never be silently auto-certified.'})
+        assignment_rows = [assignments[item_id] for item_id in grant_ids]
+        path_ids = sorted({path_id for row in assignment_rows for path_id in row.grant_path_ids})
         findings.append({
             'key': digest([scan.source, kind, account_id, person_id, entitlement_id])[:32],
             'kind': kind, 'account_id': account_id, 'identity_id': person_id,
@@ -130,7 +157,10 @@ def evaluate(bundle, scan, correlations, *, now, config=EngineConfig()):
             'source': scan.source, 'assignment_ids': sorted(grant_ids), 'sensitivity': sensitivity,
             'privileged': privileged, 'policy_result': result, 'signals': signals,
             'risk_score': score, 'risk_level': 'critical' if score >= 80 else 'high' if score >= 60 else 'medium' if score >= 30 else 'low',
-            'recommendation': recommendation, 'peer': peer, 'actionable': actionable,
+            'peer': peer, 'actionable': actionable, 'constraints': constraints,
+            'policy_fact': {'code': result, 'rule_id': policy.id if policy else result,
+                            'text': policy_text},
+            'grant_path_ids': path_ids,
             'evidence': {'scan_id': scan.scan_id, 'scanned_at': scan.scanned_at, 'mapping_version': scan.mapping_version,
                          'snapshot_at': bundle.snapshot_at, 'policy_effective_from': bundle.effective_from,
                          'correlations': binding_evidence.get(account_id, []),
@@ -175,5 +205,43 @@ def evaluate(bundle, scan, correlations, *, now, config=EngineConfig()):
                     add('missing_access', None, entitlement_id, 'missing_expected', person_id=person_id)
     if warnings:
         add('coverage', None, None, 'coverage_gap')
-    return {'findings': sorted(findings, key=lambda x: (-x['risk_score'], x['key'])),
-            'warnings': warnings, 'actionable': actionable}
+    findings = sorted(findings, key=lambda x: (-x['risk_score'], x['key']))
+    grouped = defaultdict(list)
+    for item in findings:
+        owner = item['identity_id'] or ('account:' + item['account_id'] if item['account_id'] else 'system')
+        grouped[owner].append(item)
+    cases = []
+    for owner, items in sorted(grouped.items()):
+        person_id = items[0]['identity_id']
+        account_ids = sorted({item['account_id'] for item in items if item['account_id']} |
+                             set(person_accounts.get(person_id, ())))
+        item_entitlements = {item['entitlement_id'] for item in items if item['entitlement_id']}
+        case_assignments = [row for row in scan.assignments
+                            if row.identity in account_ids and row.entitlement in item_entitlements]
+        case_path_ids = {path_id for row in case_assignments for path_id in row.grant_path_ids}
+        case_paths = [path.model_dump() for path_id, path in paths.items() if path_id in case_path_ids]
+        application_ids = {accounts[account_id].application_id for account_id in account_ids}
+        application_ids |= {discovered[entitlement_id].application_id for entitlement_id in item_entitlements
+                            if entitlement_id in discovered}
+        evidence_refs = ([f'identity:{person_id}'] if person_id else []) + [f'account:{x}' for x in account_ids]
+        evidence_refs += [f'item:{item["key"]}' for item in items]
+        evidence_refs += [f'path:{x}' for x in sorted(case_path_ids)]
+        cases.append({
+            'key': digest([scan.source, 'case', owner])[:32],
+            'identity_id': person_id,
+            'identity_context': bundle.context_for(person_id) if person_id else None,
+            'accounts': [accounts[x].model_dump() for x in account_ids],
+            'applications': [applications[x].model_dump() for x in sorted(application_ids)],
+            'items': items,
+            'assignments': [row.model_dump() for row in case_assignments],
+            'grant_paths': case_paths,
+            'exceptions': [row.model_dump() for row in scan.exceptions
+                           if row.account_id in account_ids and row.entitlement_id in item_entitlements],
+            'history': [row.model_dump() for row in scan.history
+                        if row.account_id in account_ids and (row.entitlement_id is None or row.entitlement_id in item_entitlements)],
+            'relevant_entitlements': [asdict(catalog[x]) if x in catalog else discovered[x].model_dump()
+                                      for x in sorted(item_entitlements)],
+            'evidence_refs': evidence_refs,
+            'warnings': warnings,
+        })
+    return {'cases': cases, 'findings': findings, 'warnings': warnings, 'actionable': actionable}

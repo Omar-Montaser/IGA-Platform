@@ -141,6 +141,5 @@ statistical threshold or risk-score calibration is established by this
 dataset. Peer agreement never overrides an explicit restriction: shared
 overprovisioning can be common and still be inappropriate.
 
-The next implementation should use [handoff.md](handoff.md) for independently
-constructed scan scenarios. Expected results belong in tests for the later
-review engine, not in authoritative HR rows or policy payloads.
+Expected review results belong in Module 4 tests, not in authoritative HR rows
+or policy payloads.

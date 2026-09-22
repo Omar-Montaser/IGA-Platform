@@ -39,21 +39,23 @@ entire file.
 Audit events record actor, time, action, finding/campaign references, outcome,
 and request correlation. Credentials and remote error bodies are excluded.
 
-## AI explanation boundary
+## Independent AI review boundary
 
 The optional OpenAI adapter uses the Responses API with Structured Outputs.
-Official documentation states that Structured Outputs constrain the response
-to the supplied JSON schema. The adapter additionally validates the returned
-recommendation and evidence-code set against deterministic engine output.
+The strict response schema requires a person-level action, confidence,
+evidence references, questions, missing evidence, reasoning, and one assessment
+for every access item. The AI is deliberately allowed to disagree with a
+deterministic constraint; disagreement is retained and forces human review.
 
 - [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
 
-Only enumerated categories, integer contributions, a boolean/null privilege
-classification, and aggregate peer counts may leave through this adapter.
-Names, usernames, source/account/entitlement IDs, correlation notes, raw scan
-text, and reviewer reasons are not sent. `store` is false, tools are absent,
+The complete normalized identity case is sent because independent review
+requires the person, role, applications, accounts, entitlements, grant paths,
+history, justification, exceptions, and exact policy facts. Evidence strings
+are explicitly treated as untrusted data. `store` is false, tools are absent,
 redirects are disabled, and failures use a clearly labeled local rule fallback.
-AI output cannot authorize a decision or initiate remediation.
+Deployment therefore requires an organizational privacy and data-residency
+review. AI output cannot authorize a decision or initiate remediation.
 
 No real OpenAI request was made in the implementation verification. The adapter
 was tested using mock HTTP transports. Live use requires an explicit model,

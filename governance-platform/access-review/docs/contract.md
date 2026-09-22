@@ -1,142 +1,106 @@
 # Module 4 implementation contract
 
-Version 1.0.0. Module 4 consumes validated Module 1 documents and normalized
-Module 3 scans. It contains no native system commands. Python package
-`iga_review` uses FastAPI and SQLite. The implemented core exposes an HTTP API;
-the browser reviewer UI is follow-on work.
+Version 2.0.0. Module 4 consumes validated Module 1 HR/policy documents and a
+normalized Module 3 evidence scan. It contains no native system commands.
 
-## Scan and correlation
+## Normalized scan v2
 
-A scan requires `schema_version: "1.0.0"`, `scan_id`, `source`, `scanned_at`
-(UTC ISO timestamp ending Z, optional fractional seconds), `complete` (boolean),
-`mapping_version`, `scope_entitlements` (unique ID strings), `request_id`
-(nullable string; the requested correlation ID for verification scans), and
-arrays `identities`, `entitlements`, `assignments`. Unknown fields are rejected.
-All objects are source independent; strings are trimmed, bounded, no controls.
+`Scan` requires `schema_version: "2.0.0"`, immutable scan/source/mapping IDs,
+UTC `scanned_at`, completeness and request-correlation fields, plus these
+source-owned collections:
 
-- Account: `id`, `username`, `enabled` (boolean), `source`.
-- Entitlement: `id`, `name`, `type` (`permission`), `sensitivity`
-  (`low|medium|high|critical|unknown`), `privileged` (boolean or null), `source`.
-- Assignment: `id`, `identity` (account ID), `entitlement` (catalog ID),
-  `source`, `timestamp` (UTC; not after scanned_at).
+- `applications`: ID, name, criticality and source.
+- `identities` (source accounts): ID, username, enabled state, application ID,
+  account type and source.
+- `roles`: business or application role, optional application ID, privileged
+  classification and source.
+- `groups`: application-owned group and privileged classification.
+- `entitlements`: permission, sensitivity, privileged classification and
+  application ID.
+- `grant_paths`: account-to-entitlement paths whose intermediate nodes may be
+  business roles, application roles, or groups.
+- `assignments`: observed account/entitlement assignment, observation time,
+  one or more exact grant-path IDs, optional business justification and
+  approved-exception ID.
+- `exceptions`: approver, approval/expiry times and reason.
+- `history`: granted/revoked/changed/reviewed events.
 
-All object IDs are unique within their own collection, references resolve,
-source equals scan.source, discovered entitlements are in scope, and every
-scope ID has a scan entitlement definition. Empty scans are valid. Multiple
-assignments can confer the same capability; review groups by account+entitlement
-and removal verification requires all grants of that capability to disappear.
-Complete means all accounts and all grants for declared scope were read.
+Unknown fields and type coercion are rejected. IDs are unique, all references
+resolve, every object belongs to the scan source, each path begins at its
+declared account and ends at its declared entitlement, and event/assignment
+times cannot be later than the scan. `scope_entitlements` must exactly match
+the discovered entitlement catalog. Complete means all accounts and grants in
+the declared scope were read.
 
-Import payload: `name`, `identities` (M1 document), `policies` (M1 document),
-`scan` (above), `correlations` (array of `account_id`, `identity_id`, `evidence`).
-Only administrators import. Bindings are explicit, never inferred from username.
-References resolve; duplicate identical bindings are invalid, multiple distinct
-HR candidates for one account remain ambiguous review evidence. Canonical input
-and SHA-256 digests are retained; API also retains the exact submitted JSON.
+Campaign input also includes Module 1 documents and explicit account-to-HR
+correlations. Ownership is never inferred from usernames. The local demo loads
+access observations from the checked-in `normalized-evidence.json`; it does not
+derive grants from policy expectations. This is a stable synthetic fixture,
+not a claim that a live Module 3 connector exists.
 
-## Engine API
+## Deterministic engine
 
-`domain.Scan.model_validate(data)` validates normalized scans. `domain.Correlation`
-validates binding records. `domain.EngineConfig` is a frozen dataclass with
-`max_hr_age_days=30`, `max_scan_age_hours=24`, `max_clock_skew_seconds=300`,
-`min_peer_count=5`, `peer_rarity_threshold=0.2`. `domain.utcnow()` and
-`domain.timestamp(datetime)` supply UTC time. `domain.InputError(ValueError)`
-represents semantic input problems. M1 uses its existing BundleValidationError.
+`engine.evaluate(...)` returns `cases`, compatibility `findings`, evidence
+warnings and campaign actionability. There is one case per correlated HR
+identity; unresolved accounts and coverage failures have separate cases. Each
+case contains full relevant identity/role context, applications, accounts,
+entitlements, assignments, direct/inherited paths, justifications, exceptions,
+history, policy facts and evidence references.
 
-`engine.evaluate(bundle, scan, correlations, *, now, config=EngineConfig())`
-returns `{findings: [...], warnings: [...], actionable: bool}`. Finding dict:
-`key` stable within scan, `kind` (`assignment|missing_access|account|coverage`),
-`account_id` nullable, `identity_id` nullable, `identity_name`, `username`,
-`department`, `role`, `employment_status`, `entitlement_id` nullable,
-`entitlement_name`, `source`, `assignment_ids` list, `sensitivity`, `privileged`,
-`policy_result` (`expected|permitted_privileged|restricted|lifecycle_restricted|
-unauthorized_privilege|unlisted|unknown_entitlement|unmatched|ambiguous|
-missing_expected|coverage_gap`), `signals` list of `{code, message, points}`,
-`risk_score` integer 0..100, `risk_level` (`low|medium|high|critical`),
-`recommendation` (`certify|review|revoke|acknowledge`), `peer` object,
-`evidence` JSON object, `actionable` bool.
+The engine classifies policy facts and creates safety constraints. It does not
+return a recommendation. Hard restrictions, lifecycle restrictions and
+unauthorized privilege produce a non-discretionary `remove` constraint.
+Privileged access produces a mandatory-human constraint. Unresolved ownership
+and stale/incomplete evidence block decisions. Risk remains a transparent,
+versioned triage heuristic rather than a probability or authorization result.
 
-Each actual assignment is reviewable, even expected access. Nonactive status
-wins, then restricted, then expected/permitted privilege, then unauthorized
-privilege/unlisted/unknown. Unknown and ambiguous accounts remain visible even
-with zero assignments. Missing expected access is computed over the union of
-all accounts explicitly bound to a person, only for active identities with an
-observed account, complete in-scope scan and fresh HR/scan data. Disabled account
-state never erases retained grants. Peer denominator counts distinct other
-active, unambiguously matched, observed HR people of same department, role and
-employment_type, excludes subject; use all their accounts, suppress on partial
-scans or fewer than min_peer_count. Peer rarity is explanatory, never an allow
-rule. Baseline absence is not a provisioning action.
+## Independent review
 
-Stale inputs, future skew, scan before HR snapshot or policy effective date,
-and partial scans produce warnings and block decisions for the campaign;
-findings remain inspectable, missing/peer inferences are suppressed. Risk is a
-versioned heuristic with explicit contributions, not a probability. M1 catalog
-classification is authoritative; higher scan sensitivity/privilege is retained
-conservatively, discrepancies are visible. Evaluation never invokes AI or a
-connector. All display strings must be rendered as text by consumers.
+Campaign creation invokes `review(case)` once for every case. The OpenAI
+reviewer sends the complete normalized case to the fixed Responses endpoint
+with tools disabled, `store=false`, bounded transport/output and strict
+structured output. It may independently return:
 
-## HTTP and service interface
+- case `recommended_action`: `retain|remove|investigate|escalate`;
+- confidence from 0 through 1;
+- evidence references, open questions, missing evidence and reasoning;
+- exactly one assessment for every access item, with its own action, evidence
+  references and reasoning.
 
-Bearer credentials identify server-configured principals. No submitted reviewer
-name grants authority. `User` has id, name, role (`admin|reviewer`),
-hr_identity_id nullable, token_hash. Reviewers access assigned findings only;
-admins may access all, but nobody may approve their own HR identity. Manager
-principals are resolved from HR manager_id; otherwise an explicitly configured
-fallback principal is used, or routing remains unresolved.
+The model is not forced to match deterministic constraints. Invalid, refused,
+incomplete or failed model responses become an explicit `provider: rules`,
+`status: fallback` result; fallback is never labeled as AI. Review cases and
+assessments are persisted and included in campaign export.
 
-- `GET /` public core API status, no secrets.
-- `GET /api/health` public liveness, no secrets.
-- `GET /api/me` authenticated principal plus `demo` and `ai_provider`.
-- `GET /api/campaigns` -> `{campaigns: [...]}`.
-- `POST /api/campaigns` import -> campaign including findings (admin).
-- `GET /api/campaigns/{id}` -> campaign including authorized `findings`.
-- `GET /api/findings/{id}` -> finding with state and explanation.
-- `POST /api/findings/{id}/decisions` JSON `action`, `reason`,
-  `expected_version`, `acknowledge_risk`; header `Idempotency-Key`.
-- `POST /api/findings/{id}/explanation` -> explanation (never a decision).
-- `POST /api/campaigns/{id}/process` dispatch queued approvals and verify (admin).
-- `POST /api/remediations/{id}/retry` retry same approved request (admin).
-- `GET /api/campaigns/{id}/audit` -> `{events: [...], integrity: bool}`.
-- `GET /api/campaigns/{id}/export` -> retained inputs, findings, decisions,
-  requests, verification scans, audit (admin).
-- `GET /api/schemas/scan` -> generated JSON schema (authenticated).
+Mandatory human-review reasons are explicit data: `privileged_access`,
+`ai_engine_disagreement`, `low_ai_confidence`, `missing_evidence`,
+`non_discretionary_constraint`, and `ai_fallback`. A disagreement is retained
+for audit and human inspection. Confidence below the recorded campaign
+threshold (currently 0.7) is low. Disagreement never weakens a hard constraint.
 
-Errors use `{error: {code, message}}` with HTTP 400/401/403/404/409/422/503.
-Finding responses add `id`, `campaign_id`, `version` starting 1,
-`status` starting `pending`, `reviewer_id`, `routing_reason`, `explanation`,
-`can_decide` and `allowed_actions`. Decision body allows `certify|revoke` only
-for assignment findings and `acknowledge` for other findings. Risky certification
-requires acknowledge_risk=true. Every decision needs a nonblank reason of 8..2000
-characters. Only pending, fresh, routed items can be decided. Concurrent/repeated
-updates use expected_version and idempotency keys; duplicate identical requests
-return original decision, conflicting key reuse fails. Decision+audit+revoke
-outbox entry commit together. No AI or connector call occurs in that transaction.
+## Human decisions and remediation
 
-## Connector and explanation boundary
+Authenticated, routed reviewers still decide item-level `certify`, `revoke`,
+or `acknowledge` actions with a reason, expected version and idempotency key.
+Self-review, stale evidence and unresolved routing remain blocked. Certification
+against a non-discretionary remove constraint is rejected even when risk is
+acknowledged. AI never approves or dispatches work.
 
-`connector.Connector.revoke(request: dict) -> dict` returns `request_id`,
-`status` (`succeeded|failed`), `message`. Request contains `request_id`, `source`,
-`identity` (source account ID), `entitlement`, `approved_by`, `approved_at`,
-`reason`, `scan_id`, `mapping_version`, `assignment_ids`. Identical request_id
-must be idempotent. No browser-supplied command or endpoint is accepted.
-`Connector.scan(source, request_id) -> dict` returns a normalized scan with
-that request_id. HTTP adapter POSTs `/revocations` and `/scans` to an explicitly
-configured base URL with a separate service credential; no redirects.
+A revoke transaction stores the exact approved account, entitlement,
+assignment IDs and grant-path IDs. The fixture connector rejects changed target
+sets, removes only those approved paths/assignments, and remains idempotent.
+Connector acknowledgement is not proof of removal. Verification requires a
+newer, complete Module 3 scan with the same source/mapping, correct request ID,
+coverage of the target entitlement, and no remaining assignment for the exact
+account/entitlement. Verification evidence and all decisions are audited.
 
-Outbox states queued/dispatching/verification_pending/failed/verification_failed/
-verified. Claims are transactional and leased; retry keeps request_id. Success
-from revoke is only an acknowledgement. Verification requires a different scan
-ID, matching source, request_id and mapping version, a timestamp after the scan
-request and approval, complete scope covering the target entitlement, and no
-assignment for the exact target account+entitlement. Store successful and failed
-verification evidence. Fixture connector operates on clearly labeled simulated
-state; it is not Module 3 or a real target scan.
+## HTTP surface
 
-`explanations.RuleExplainer.explain(finding) -> dict` returns provider `rules`,
-summary, recommendation, evidence_codes, status. Optional
-`OpenAIExplainer(api_key, model, client=None)` uses Responses structured output,
-no tools, no names/usernames/raw source text, store=false, bounded timeout/output.
-Unconfigured/unavailable/invalid AI output falls back explicitly to rules.
-AI may explain evidence but cannot change signals, scores, allowed actions, or
-approve/dispatch requests. UI identifies rule text separately from AI text.
+The existing campaign, finding, decision, processing, retry, audit, export and
+scan-schema endpoints remain. `POST /api/findings/{id}/explanation` now returns
+the assessment created during campaign import; it does not trigger optional
+case work. Finding responses retain compatibility `recommendation` values for
+the current UI, but those values are projections of the independent item
+assessment, never deterministic-engine output. They also expose `case_id`,
+`recommended_action`, `case_assessment`, `item_assessment`,
+`mandatory_human_review`, and `human_review_reasons`.

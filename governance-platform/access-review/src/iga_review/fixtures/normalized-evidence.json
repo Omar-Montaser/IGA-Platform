@@ -1,0 +1,82 @@
+{
+  "source": "prototype-system",
+  "mapping_version": "normalized-fixture-v2",
+  "applications": [
+    {"id": "app:collaboration", "name": "Collaboration Suite", "criticality": "medium"},
+    {"id": "app:engineering", "name": "Engineering Delivery", "criticality": "critical"},
+    {"id": "app:finance", "name": "Financial Ledger", "criticality": "critical"},
+    {"id": "app:security", "name": "Security Evidence", "criticality": "high"}
+  ],
+  "roles": [
+    {"id": "role:business:engineer", "name": "Software Engineer", "kind": "business", "application_id": null, "privileged": false},
+    {"id": "role:app:contributor", "name": "Repository Contributor", "kind": "application", "application_id": "app:engineering", "privileged": false},
+    {"id": "role:app:deployer", "name": "Production Deployer", "kind": "application", "application_id": "app:engineering", "privileged": true}
+  ],
+  "groups": [
+    {"id": "group:engineering", "name": "Engineering", "application_id": "app:engineering", "privileged": false},
+    {"id": "group:production-deployers", "name": "Production Deployers", "application_id": "app:engineering", "privileged": true}
+  ],
+  "accounts": [
+    {"id": "acct:person-0001", "username": "ada.bennett.0001", "enabled": true, "application_id": "app:engineering", "account_type": "human"},
+    {"id": "acct:person-0002", "username": "alex.morgan.0002", "enabled": true, "application_id": "app:engineering", "account_type": "human"},
+    {"id": "acct:person-0003", "username": "zoe.bennett.0003", "enabled": true, "application_id": "app:engineering", "account_type": "human"},
+    {"id": "acct:person-0004", "username": "casey.diaz.0004", "enabled": true, "application_id": "app:engineering", "account_type": "human"},
+    {"id": "acct:person-0005", "username": "chen.evans.0005", "enabled": true, "application_id": "app:engineering", "account_type": "privileged"},
+    {"id": "acct:person-0006", "username": "dara.farah.0006", "enabled": true, "application_id": "app:engineering", "account_type": "human"},
+    {"id": "acct:person-0007", "username": "emi.gray.0007", "enabled": true, "application_id": "app:engineering", "account_type": "human"},
+    {"id": "acct:person-0013", "username": "lena.malik.0013", "enabled": true, "application_id": "app:finance", "account_type": "privileged"},
+    {"id": "acct:secondary", "username": "secondary.account", "enabled": true, "application_id": "app:engineering", "account_type": "human"},
+    {"id": "acct:unknown", "username": "unmatched.account", "enabled": true, "application_id": "app:collaboration", "account_type": "unknown"},
+    {"id": "acct:empty", "username": "unowned.empty", "enabled": true, "application_id": "app:collaboration", "account_type": "unknown"},
+    {"id": "acct:ambiguous", "username": "shared.login", "enabled": true, "application_id": "app:engineering", "account_type": "shared"}
+  ],
+  "entitlements": [
+    {"id": "ent:collaboration:workspace-read", "name": "Read shared workspaces", "type": "permission", "sensitivity": "low", "privileged": false, "application_id": "app:collaboration"},
+    {"id": "ent:engineering:source-read", "name": "Read source code", "type": "permission", "sensitivity": "high", "privileged": false, "application_id": "app:engineering"},
+    {"id": "ent:engineering:source-write", "name": "Contribute source code", "type": "permission", "sensitivity": "high", "privileged": false, "application_id": "app:engineering"},
+    {"id": "ent:engineering:production-deploy", "name": "Deploy to production", "type": "permission", "sensitivity": "critical", "privileged": true, "application_id": "app:engineering"},
+    {"id": "ent:security:audit-read", "name": "Read security audit records", "type": "permission", "sensitivity": "high", "privileged": false, "application_id": "app:security"},
+    {"id": "ent:finance:ledger-admin", "name": "Administer financial ledger", "type": "permission", "sensitivity": "critical", "privileged": true, "application_id": "app:finance"},
+    {"id": "ent:unmapped:capability", "name": "Unmapped application capability", "type": "permission", "sensitivity": "unknown", "privileged": null, "application_id": "app:engineering"}
+  ],
+  "access": [
+    {"id": "baseline:0001:read", "account_id": "acct:person-0001", "entitlement_id": "ent:engineering:source-read", "via": ["role:business:engineer", "group:engineering"], "justification": "Engineering management duties require repository visibility."},
+    {"id": "baseline:0002:read", "account_id": "acct:person-0002", "entitlement_id": "ent:engineering:source-read", "via": ["role:business:engineer", "group:engineering"]},
+    {"id": "baseline:0002:write", "account_id": "acct:person-0002", "entitlement_id": "ent:engineering:source-write", "via": ["role:app:contributor"]},
+    {"id": "baseline:0003:read", "account_id": "acct:person-0003", "entitlement_id": "ent:engineering:source-read", "via": ["group:engineering"]},
+    {"id": "baseline:0004:read", "account_id": "acct:person-0004", "entitlement_id": "ent:engineering:source-read", "via": ["group:engineering"]},
+    {"id": "baseline:0004:write", "account_id": "acct:secondary", "entitlement_id": "ent:engineering:source-write", "via": ["role:app:contributor"]},
+    {"id": "baseline:0005:read", "account_id": "acct:person-0005", "entitlement_id": "ent:engineering:source-read", "via": ["group:engineering"]},
+    {"id": "baseline:0005:write", "account_id": "acct:person-0005", "entitlement_id": "ent:engineering:source-write", "via": ["role:app:contributor"]},
+    {"id": "exception:0005:deploy-direct", "account_id": "acct:person-0005", "entitlement_id": "ent:engineering:production-deploy", "via": [], "justification": "Temporary release lead coverage during the September launch.", "exception_id": "exception:release-coverage"},
+    {"id": "exception:0005:deploy-group", "account_id": "acct:person-0005", "entitlement_id": "ent:engineering:production-deploy", "via": ["group:production-deployers", "role:app:deployer"], "justification": "Inherited through the controlled production deployers group.", "exception_id": "exception:release-coverage"},
+    {"id": "baseline:0006:read", "account_id": "acct:person-0006", "entitlement_id": "ent:engineering:source-read", "via": ["group:engineering"]},
+    {"id": "baseline:0006:write", "account_id": "acct:person-0006", "entitlement_id": "ent:engineering:source-write", "via": ["role:app:contributor"]},
+    {"id": "extra:0006:audit", "account_id": "acct:person-0006", "entitlement_id": "ent:security:audit-read", "via": []},
+    {"id": "baseline:0007:read", "account_id": "acct:person-0007", "entitlement_id": "ent:engineering:source-read", "via": ["group:engineering"]},
+    {"id": "baseline:0007:write", "account_id": "acct:person-0007", "entitlement_id": "ent:engineering:source-write", "via": ["role:app:contributor"]},
+    {"id": "unknown:0007", "account_id": "acct:person-0007", "entitlement_id": "ent:unmapped:capability", "via": []},
+    {"id": "extra:0013:ledger", "account_id": "acct:person-0013", "entitlement_id": "ent:finance:ledger-admin", "via": []},
+    {"id": "unknown:collaboration", "account_id": "acct:unknown", "entitlement_id": "ent:collaboration:workspace-read", "via": []}
+  ],
+  "exceptions": [
+    {"id": "exception:release-coverage", "account_id": "acct:person-0005", "entitlement_id": "ent:engineering:production-deploy", "approved_by": "id:person-0001", "reason": "Time-boxed release lead coverage.", "expires_after_days": 14}
+  ],
+  "history": [
+    {"id": "history:0005:deploy", "account_id": "acct:person-0005", "entitlement_id": "ent:engineering:production-deploy", "event": "granted", "days_ago": 3, "detail": "Release coverage approved and granted."},
+    {"id": "history:0006:audit", "account_id": "acct:person-0006", "entitlement_id": "ent:security:audit-read", "event": "granted", "days_ago": 45, "detail": "Grant observed without a recorded justification."}
+  ],
+  "correlations": [
+    {"account_id": "acct:person-0001", "identity_id": "id:person-0001", "evidence": "Immutable fixture employee identifier."},
+    {"account_id": "acct:person-0002", "identity_id": "id:person-0002", "evidence": "Immutable fixture employee identifier."},
+    {"account_id": "acct:person-0003", "identity_id": "id:person-0003", "evidence": "Immutable fixture employee identifier."},
+    {"account_id": "acct:person-0004", "identity_id": "id:person-0004", "evidence": "Immutable fixture employee identifier."},
+    {"account_id": "acct:person-0005", "identity_id": "id:person-0005", "evidence": "Immutable fixture employee identifier."},
+    {"account_id": "acct:person-0006", "identity_id": "id:person-0006", "evidence": "Immutable fixture employee identifier."},
+    {"account_id": "acct:person-0007", "identity_id": "id:person-0007", "evidence": "Immutable fixture employee identifier."},
+    {"account_id": "acct:person-0013", "identity_id": "id:person-0013", "evidence": "Immutable fixture employee identifier."},
+    {"account_id": "acct:secondary", "identity_id": "id:person-0004", "evidence": "Explicit secondary account ownership record."},
+    {"account_id": "acct:ambiguous", "identity_id": "id:person-0001", "evidence": "Conflicting fixture ownership claim."},
+    {"account_id": "acct:ambiguous", "identity_id": "id:person-0013", "evidence": "Conflicting fixture ownership claim."}
+  ]
+}

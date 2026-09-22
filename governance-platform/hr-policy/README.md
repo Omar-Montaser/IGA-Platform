@@ -82,26 +82,25 @@ then switch the consumer to that immutable snapshot directory.
 The test suite includes independently authored fixtures as well as the demo.
 It exercises invalid structures and references, employment boundaries,
 management cycles, policy conflicts, strict parsing, consumer immutability,
-CLI exit codes, and generator reproducibility. The repository CI runs these
-checks and an installed-wheel smoke test on supported Python versions.
+CLI exit codes, and generator reproducibility. Run these checks locally with
+the command in this README.
 
 ## Design and scope
 
 - [Research rationale](docs/research.md): primary sources and project decisions.
 - [Data contract](docs/contract.md): exact fields, policy semantics, API, and versioning.
 - [Dataset guide](docs/dataset.md): cohorts, identity examples, and policy coverage.
-- [Handoff](docs/handoff.md): planned scenarios and obligations for later modules.
-- [Verification record](docs/verification.md): Module 1 acceptance evidence and limits.
 
 This is a custom contract informed by SCIM and NIST guidance; it is not a SCIM
 server. HR lifecycle policy is explicit: only active people use role policy;
 leave, pre-hire, and terminated statuses require no access. Missing expected
-access is a future review signal, not an instruction to provision it. Privileged
+access is a review signal, not an instruction to provision it. Privileged
 access may be optional, restrictions are explicit, and unlisted access requires
 review. No rule authorizes automatic revocation.
 
 Version 1 contains one employment interval and one department/role per person
 per snapshot. Historical transitions require retaining prior snapshots. Account
-correlation, native entitlement mapping, actual scans, review decisions, AI
-explanations, and remediation remain work for their owning modules. Successful
-Module 1 validation does not demonstrate those later behaviors.
+correlation, native entitlement mapping, and actual scans remain responsibilities
+of their owning modules. Module 4 consumes this context for review and controlled
+remediation; successful Module 1 validation alone does not demonstrate those
+later behaviors.

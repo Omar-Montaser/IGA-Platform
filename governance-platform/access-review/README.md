@@ -12,8 +12,12 @@ and fresh scans.
 
 ## Implemented
 
-- Strict normalized scan and explicit account-correlation contracts.
-- Deterministic lifecycle, policy, peer, and heuristic risk evaluation.
+- Strict normalized scan v2 contract covering applications, accounts,
+  business/application roles, groups, entitlements, assignments, direct and
+  inherited grant paths, approved exceptions, and access history.
+- Deterministic lifecycle and policy facts, hard safety constraints, peer
+  evidence, and heuristic risk evaluation. The deterministic engine does not
+  issue an access recommendation.
 - Preservation of unknown, unmatched, ambiguous, and multiply granted access.
 - Freshness, coverage, clock-skew, and lifecycle-boundary decision gates.
 - SQLite persistence for retained input evidence, findings, decisions,
@@ -23,9 +27,14 @@ and fresh scans.
 - Durable connector requests with leases and retry behavior.
 - Verification requiring a different, later, complete scan with the same
   source and mapping version and coverage of the target entitlement.
-- Deterministic explanations and an optional OpenAI Responses adapter that
-  sends a typed, de-identified evidence subset and falls back to rules.
-- A persistent simulated connector and generated synthetic campaign for local
+- One independent review case per identity. When configured, the OpenAI
+  Responses reviewer receives the complete normalized case and independently
+  returns retain/remove/investigate/escalate assessments, confidence, evidence
+  references, questions, missing evidence, reasoning, and per-item actions.
+- Explicit non-AI fallback when no provider is configured or a review fails.
+  Fallback, low confidence, missing evidence, privileged access, hard
+  constraints, and AI/engine disagreement are marked for mandatory human review.
+- A persistent simulated connector and checked-in normalized evidence fixture for local
   end-to-end checks. It never modifies the host operating system.
 - A secure same-origin reviewer browser interface with keyboard accessibility,
   visible focus states, proper ARIA labels, and responsive layout. The UI
@@ -36,8 +45,9 @@ and fresh scans.
 
 The risk score is a versioned project heuristic. It is not a probability or an
 authorization decision. Peer rarity is evidence only and cannot override an
-explicit restriction. AI explanations cannot change scores, recommendations,
-allowed actions, approvals, or connector requests.
+explicit restriction. AI assessment is advisory: it may disagree visibly with
+the deterministic facts, but cannot override hard constraints, approve access,
+or initiate connector requests.
 
 ## Local setup
 
@@ -73,8 +83,9 @@ not claimed by this prototype configuration.
 
 1. An administrator imports one JSON object containing validated Module 1
    documents, a normalized scan, and explicit account-to-HR correlations.
-2. The engine records immutable input digests and deterministic findings.
-3. An assigned reviewer records `certify`, `revoke`, or `acknowledge` with a
+2. The engine records immutable input digests, policy facts, and safety
+   constraints, then the configured reviewer analyzes each person-level case.
+3. An assigned human reviewer records `certify`, `revoke`, or `acknowledge` with a
    reason, current item version, and idempotency key.
 4. A revoke decision atomically creates a connector request and audit event.
 5. An administrator or worker processes the durable queue. Connector success
@@ -89,7 +100,8 @@ in [contract.md](docs/contract.md). Design research is in
 ## Intentionally left for follow-on work
 
 - Integration with the organization's identity provider and user lifecycle.
-- A real Module 3 implementation and its deployed service authentication.
+- A deployed Module 3 connector. The normalized v2 consumer contract and a
+  stable synthetic fixture exist; live source discovery does not.
 - Background worker supervision, production database choice, backups,
   deployment manifests, metrics, rate limiting, and operational alerting.
 - Live OpenAI evaluation with an explicitly selected model and project key.

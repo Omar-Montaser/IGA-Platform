@@ -99,12 +99,6 @@ const api = {
         });
     },
     
-    async requestExplanation(findingId) {
-        return this.request(`/api/findings/${encodeURIComponent(findingId)}/explanation`, {
-            method: 'POST'
-        });
-    },
-    
     async processCampaign(campaignId) {
         return this.request(`/api/campaigns/${encodeURIComponent(campaignId)}/process`, {
             method: 'POST'
@@ -454,9 +448,14 @@ function renderFindings() {
                 <span><strong>Risk:</strong> <span class="badge ${finding.risk_level}">${finding.risk_level}</span></span>
                 <span><strong>Status:</strong> <span class="badge ${finding.status}">${finding.status.replace(/_/g, ' ')}</span></span>
                 <span><strong>Policy:</strong> ${escapeHtml(finding.policy_result)}</span>
-                <span><strong>Recommendation:</strong> ${escapeHtml(finding.recommendation)}</span>
+                <span><strong>Assessment:</strong> ${escapeHtml(finding.recommended_action || finding.recommendation)}</span>
                 ${finding.reviewer_id ? `<span><strong>Reviewer:</strong> ${escapeHtml(finding.reviewer_id)}</span>` : ''}
             </div>
+            ${finding.mandatory_human_review ? `
+                <div style="margin-top: 0.5rem; color: var(--color-danger);">
+                    ⚠ Mandatory human review: ${(finding.human_review_reasons || []).map(reason => escapeHtml(reason.replace(/_/g, ' '))).join(', ')}
+                </div>
+            ` : ''}
             ${finding.decision_blockers && finding.decision_blockers.length > 0 ? `
                 <div style="margin-top: 0.5rem; color: var(--color-danger);">
                     ⚠ Decision blocked: ${finding.decision_blockers.length} issue(s)
@@ -554,8 +553,8 @@ function renderFindingDetail() {
                     <span class="detail-value">${escapeHtml(finding.policy_result)}</span>
                 </div>
                 <div class="detail-item">
-                    <span class="detail-label">Recommendation</span>
-                    <span class="detail-value">${escapeHtml(finding.recommendation)}</span>
+                    <span class="detail-label">Independent Assessment</span>
+                    <span class="detail-value">${escapeHtml(finding.recommended_action || finding.recommendation)}</span>
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">Status</span>
@@ -613,23 +612,30 @@ function renderFindingDetail() {
         `;
     }
     
-    // Explanation
+    if (finding.mandatory_human_review) {
+        html += `
+            <div class="finding-detail-section" role="alert">
+                <h3>Mandatory Human Review</h3>
+                <p>${(finding.human_review_reasons || []).map(reason => escapeHtml(reason.replace(/_/g, ' '))).join(', ')}</p>
+            </div>
+        `;
+    }
+
+    // Person-level assessment generated during campaign creation
     if (finding.explanation) {
         html += `
             <div class="explanation-section">
                 <div class="explanation-header">
-                    <h3>Explanation</h3>
+                    <h3>Independent Case Assessment</h3>
                     <div class="explanation-provider">
                         Provider: <span class="badge">${finding.explanation.provider}</span>
                         ${finding.explanation.status === 'fallback' ? ' (fallback: ' + escapeHtml(finding.explanation.fallback_reason) + ')' : ''}
                     </div>
                 </div>
-                <div class="explanation-text">${escapeHtml(finding.explanation.summary)}</div>
-                ${state.user.demo && finding.can_decide ? `
-                    <button type="button" id="request-explanation-btn" style="margin-top: 1rem;">
-                        Request AI Explanation
-                    </button>
-                ` : ''}
+                <div class="explanation-text">${escapeHtml(finding.explanation.reasoning || '')}</div>
+                <p><strong>Confidence:</strong> ${typeof finding.explanation.confidence === 'number' ? (finding.explanation.confidence * 100).toFixed(0) + '%' : 'Not available'}</p>
+                ${(finding.explanation.open_questions || []).length ? `<p><strong>Open questions:</strong> ${(finding.explanation.open_questions || []).map(escapeHtml).join('; ')}</p>` : ''}
+                ${(finding.explanation.missing_evidence || []).length ? `<p><strong>Missing evidence:</strong> ${(finding.explanation.missing_evidence || []).map(escapeHtml).join('; ')}</p>` : ''}
             </div>
         `;
     }
@@ -756,23 +762,6 @@ function attachFindingHandlers(finding) {
         decisionForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             await submitDecision(finding);
-        });
-    }
-    
-    // Explanation request
-    const explainBtn = document.getElementById('request-explanation-btn');
-    if (explainBtn) {
-        explainBtn.addEventListener('click', async () => {
-            try {
-                showLoading();
-                const explanation = await api.requestExplanation(finding.id);
-                state.currentFinding.explanation = explanation;
-                renderFindingDetail();
-                showLoading(false);
-            } catch (error) {
-                showLoading(false);
-                alert('Failed to request explanation: ' + error.message);
-            }
         });
     }
     
