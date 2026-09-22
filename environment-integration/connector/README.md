@@ -4,7 +4,7 @@ The only component that touches the Linux target system. Discovers access,
 normalizes it into generic objects, and executes approved removals.
 
 Implements the connector interface defined in
-`governance-platform/access-review/docs/contract.md`.
+`governance-platform/access-review/docs/contract.md`, **scan schema v2.0.0**.
 
 ## Architecture
 
@@ -20,6 +20,11 @@ api.py           HTTP surface
 for Active Directory and those two are rewritten; `normalize.py`'s output shape
 and the API do not change. That is the generic-core claim made structural rather
 than asserted.
+
+The claim was tested in practice when Module 4 moved from scan schema v1 to v2.
+The contract gained four collections and changed three object shapes. Every line
+that had to change was in `normalize.py`. `transport.py` and `discovery.py` were
+not touched.
 
 **Transport is separate from discovery** because *how* you reach a system is
 orthogonal to *what you read from it*. One parser serves all three transports,
@@ -84,8 +89,29 @@ time against a SHA-256 hash. The token itself is never stored.
 | `IGA_SSH_HOST/PORT/USER/KEY/KNOWN_HOSTS` | — | SSH transport settings |
 | `IGA_FIXTURE_DIR` | `./samples` | Fixture transport source |
 | `IGA_SOURCE` | `linux-lab` | Source name; must match the scan request |
+| `IGA_SERVICE_ACCOUNTS` | `iga_svc` | Comma-separated. Accounts reported as `account_type: service` |
 | `IGA_MAPPING` | `/opt/iga-lab/entitlement_map.json` | Native↔generic mapping |
 | `IGA_STATE` | `/var/lib/iga-connector/state.db` | Idempotency receipts |
+
+## Scan v2: paths, not just holdings
+
+v1 asked *what* access an account holds. v2 also asks *how it was reached*, as
+`grant_paths`. Our two native representations produce two different path shapes:
+
+```
+POSIX group membership  →  inherited  [account, group, entitlement]
+sudoers drop-in         →  direct     [account, entitlement]
+```
+
+Their validator enforces the correspondence — `direct` must be exactly two hops —
+so the distinction cannot rot silently. This is the sharpest demonstration in the
+project of why the normalization boundary exists: one generic entitlement,
+`ent:it:infrastructure-admin`, reached by a structurally different route from
+every other entitlement, and Module 4 never learns the word *sudoers*.
+
+One assignment is emitted per account+entitlement pair, citing every route that
+carries it. Two groups mapping to one entitlement is one assignment with two
+grant paths, not two assignments.
 
 ## Deliberate decisions
 
@@ -103,6 +129,13 @@ opinion. The contract permits these values.
 **Revocation success is an acknowledgement, never proof.** The response message
 says so in words. Verification is a separate scan.
 
+**The approved target set is checked against a fresh reading.** v2 requires an
+approval to name the exact assignment and grant paths it covers. Access can
+change between the scan a reviewer saw and the moment a revocation executes, so
+`remediation.py` re-reads the target and refuses if the approved set no longer
+describes what is there. Refusing and asking for a re-scan is correct; removing
+something nobody approved is not.
+
 **Every change goes through `iga-remediate`.** This package never runs `gpasswd`
 or edits sudoers itself.
 
@@ -117,6 +150,19 @@ creates that shape, but a real system can, and dropping it would under-report.
 ## Limitations we identified in the interface
 
 Worth stating in the report rather than being caught by them in questions.
+
+**`Group.privileged` is a required boolean; `Entitlement.privileged` is
+nullable.** The same contract lets a connector decline to classify an
+entitlement but forces it to assert true or false about a group. We emit
+`false`, which is an assertion we have no basis for. The two fields should agree,
+and `bool | None` is the right shape for both.
+
+**`account_type` has no source on Linux.** POSIX records no such attribute. The
+service accounts are named in connector configuration (`IGA_SERVICE_ACCOUNTS`)
+and everything else above the system UID floor is reported as `human`. Inferring
+it from the login shell would be worse than useless — a deprovisioned human has
+`nologin` and would be silently reclassified as a service account, hiding the
+lifecycle leftovers a review exists to find.
 
 **Assignment `timestamp` is a fiction on Linux.** The source records no grant
 time. We report the modification time of the file carrying the grant, clamped so
@@ -142,18 +188,26 @@ would carry more.
 python3 tests/test_connector.py
 ```
 
-38 assertions against a live seeded lab: authentication, exact contract key sets,
-referential integrity, the complete seeded truth discovered with nothing
-invented, idempotent replay, conflicting key reuse, stale mapping version, wrong
-source, and a revoke-then-verify cycle proving one assignment disappeared and
-nothing else changed.
+59 assertions against a live seeded lab: authentication, exact contract key sets
+for all seven object types, referential integrity, grant-path structure, the
+complete seeded truth discovered with nothing invented, idempotent replay,
+conflicting key reuse, stale mapping version, wrong source, rejection of an
+approved target set that no longer matches, and a revoke-then-verify cycle
+proving one assignment and its grant path disappeared and nothing else changed.
+
+The suite imports **Module 4's own `Scan` model** from the sibling package and
+validates the scan document against it. Hand-written assertions say what we
+believe their contract means; that one check is the contract itself. When it
+moves again, this suite fails here rather than during a live campaign. If
+`iga_review` cannot be imported the check reports SKIP rather than passing
+silently.
 
 Verified on all three transports:
 
 | Transport | Result |
 | --- | --- |
-| `ssh` | **38 passed, 0 failed** — 367/367 assignments discovered |
-| `local` | **38 passed, 0 failed** — 367/367 assignments discovered |
+| `ssh` | 367/367 assignments, 367 grant paths (3 direct, 364 inherited) |
+| `local` | 367/367 assignments |
 | `fixture` | Runs offline; revocation refused as `fixture_is_read_only` |
 
 The least-privilege boundary was checked by hand over SSH: `iga-inspect` and

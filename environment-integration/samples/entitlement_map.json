@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "mapping_version": "1.0.0",
   "source": "linux-lab",
-  "generated_at": "2026-09-22T10:13:21Z",
+  "generated_at": "2026-09-22T14:42:59Z",
   "note": "Native-to-generic mapping owned by Module 3. Generic entitlement IDs never appear on the target system.",
   "entitlements": {
     "ent:collaboration:workspace-read": {

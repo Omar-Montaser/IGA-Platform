@@ -46,6 +46,13 @@ SERVICE_ACCOUNT = "iga_svc"
 SOURCE = "linux-lab"
 MAPPING_VERSION = "1.0.0"
 
+# `userdel -r` deletes the service account's home directory, so a reset would
+# otherwise destroy the SSH key the Module 3 connector authenticates with -
+# locking out the very component that reviews this lab. The lockout surfaces
+# much later as an opaque "Authentication failed", so the key is preserved
+# across teardown here rather than reinstalled by hand after every reset.
+KEY_STASH = "/var/lib/iga-lab/service_authorized_keys"
+
 # The single entitlement represented as sudo rather than a POSIX group.
 SUDO_ENTITLEMENT = "ent:it:infrastructure-admin"
 
@@ -442,6 +449,8 @@ def seed(bundle_dir):
     print("Creating connector service account")
     if not user_exists(SERVICE_ACCOUNT):
         add_user(SERVICE_ACCOUNT, "Module 3 connector service account")
+    if restore_service_key():
+        print("  restored the connector's authorized SSH key")
     for path, body in (("/usr/local/sbin/iga-inspect", IGA_INSPECT),
                        ("/usr/local/sbin/iga-remediate", IGA_REMEDIATE)):
         with open(path, "w") as fh:
@@ -495,11 +504,15 @@ def write_artifacts(accounts, mapping, catalog, policy_index, status_index,
             uid = pwd.getpwnam(a["username"]).pw_uid
         except KeyError:
             continue
+        # Exactly the three keys Module 4's Correlation model declares. It sets
+        # extra='forbid', so a helpful extra key like `username` is rejected -
+        # the username goes into the evidence string instead, where it is still
+        # readable by a human without breaking the payload.
         correlations.append({
             "account_id": f"{SOURCE}:uid:{uid}",
-            "username": a["username"],
             "identity_id": a["identity_id"],
-            "evidence": "account provisioned from this HR identity by the lab seeder",
+            "evidence": f"POSIX account {a['username']} (uid {uid}) provisioned "
+                        f"from this HR identity by the lab seeder",
         })
 
     docs = {
@@ -603,12 +616,52 @@ def capture(dest):
     print("unit-tested against it with no VM and no SSH.")
 
 
+def _service_ssh_dir():
+    try:
+        return os.path.join(pwd.getpwnam(SERVICE_ACCOUNT).pw_dir, ".ssh")
+    except KeyError:
+        return None
+
+
+def stash_service_key():
+    """Copy the connector's authorized_keys somewhere destroy() will not reach."""
+    d = _service_ssh_dir()
+    src = os.path.join(d, "authorized_keys") if d else None
+    if not src or not os.path.isfile(src):
+        return False
+    os.makedirs(os.path.dirname(KEY_STASH), exist_ok=True)
+    shutil.copyfile(src, KEY_STASH)
+    os.chmod(KEY_STASH, 0o600)
+    os.chown(KEY_STASH, 0, 0)
+    return True
+
+
+def restore_service_key():
+    """Put it back on the freshly created service account, with sshd's
+    required ownership and permissions - sshd ignores authorized_keys that
+    the account does not own or that is group/world writable."""
+    d = _service_ssh_dir()
+    if d is None or not os.path.isfile(KEY_STASH):
+        return False
+    entry = pwd.getpwnam(SERVICE_ACCOUNT)
+    os.makedirs(d, exist_ok=True)
+    dst = os.path.join(d, "authorized_keys")
+    shutil.copyfile(KEY_STASH, dst)
+    os.chown(d, entry.pw_uid, entry.pw_gid)
+    os.chmod(d, 0o700)
+    os.chown(dst, entry.pw_uid, entry.pw_gid)
+    os.chmod(dst, 0o600)
+    return True
+
+
 def destroy():
     need_root()
     mf = os.path.join(LAB_DIR, "seed_manifest.json")
     if not os.path.isfile(mf):
         sys.exit("Nothing to remove (no seed manifest).")
     manifest = json.load(open(mf))
+    if stash_service_key():
+        print("Preserving the connector's authorized SSH key")
     print(f"Removing {len(manifest['users'])} accounts")
     for u in manifest["users"]:
         if user_exists(u) and pwd.getpwnam(u).pw_uid >= 1000:

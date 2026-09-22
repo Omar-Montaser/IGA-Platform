@@ -26,6 +26,13 @@ MAP_PATH = os.environ.get("IGA_MAPPING", "/opt/iga-lab/entitlement_map.json")
 STATE_PATH = os.environ.get("IGA_STATE", "/var/lib/iga-connector/state.db")
 TOKEN_HASH = os.environ.get("IGA_TOKEN_SHA256", "")
 SOURCE = os.environ.get("IGA_SOURCE", "linux-lab")
+# Scan v2 asks every account to declare a type. POSIX records none, so the
+# service accounts are named here rather than guessed from the target. The
+# account the connector authenticates as is always one of them.
+SERVICE_ACCOUNTS = {
+    name.strip() for name in
+    os.environ.get("IGA_SERVICE_ACCOUNTS", "iga_svc").split(",") if name.strip()
+} | {os.environ.get("IGA_SSH_USER", "").strip()} - {""}
 
 app = FastAPI(title="IGA Linux connector", version="1.0.0")
 
@@ -120,7 +127,8 @@ def scans(payload: dict = Body(...), _auth: bool = Depends(authorize)):
             link.close()
 
     return normalize.build_scan(accounts, mapping, mtimes=mtimes,
-                                source=SOURCE, request_id=request_id, complete=True)
+                                source=SOURCE, request_id=request_id, complete=True,
+                                service_accounts=SERVICE_ACCOUNTS)
 
 
 @app.post("/revocations")

@@ -7,6 +7,8 @@ the guard set cannot be bypassed by a bug here.
 """
 import json
 
+from . import discovery, normalize
+
 REMEDIATE = "/usr/local/sbin/iga-remediate"
 
 
@@ -31,6 +33,30 @@ def _username_for(transport, uid):
     if rc != 0 or not first:
         raise RemediationError(f"no account with uid {uid} on the target")
     return first
+
+
+def _live_targets(transport, mapping, source, uid, entitlement):
+    """Re-read the target and return the assignment and grant-path IDs that
+    currently carry this account's hold on this entitlement.
+
+    Scan v2 makes an approval name the exact assignment and grant paths it
+    covers. Access can change between the scan a reviewer saw and the moment a
+    revocation is executed, so the approved set is checked against a fresh
+    reading rather than against the scan that produced it.
+    """
+    for account in discovery.discover(transport, mapping.managed_groups):
+        if account.uid != uid:
+            continue
+        routes = normalize.held_entitlements(account, mapping, source).get(entitlement)
+        if not routes:
+            return set(), set()
+        return ({normalize.assignment_id(source, uid, entitlement)},
+                {route.path_id for route in routes})
+    return set(), set()
+
+
+def _describe(ids):
+    return ", ".join(sorted(ids)) if ids else "none"
 
 
 def _call(transport, args):
@@ -73,6 +99,32 @@ def revoke(request, mapping, transport, *, source, dry_run=False):
         username = _username_for(transport, uid)
     except RemediationError as exc:
         return {"request_id": request_id, "status": "failed", "message": str(exc)}
+
+    # The approved target set must still describe what is actually held. If the
+    # access changed after approval - a group added, a path removed - the
+    # approval no longer covers what is there, and the safe answer is to refuse
+    # and make someone re-scan rather than remove something nobody approved.
+    try:
+        live_assignments, live_paths = _live_targets(
+            transport, mapping, source, uid, entitlement)
+    except (discovery.DiscoveryError, RemediationError) as exc:
+        return {"request_id": request_id, "status": "failed",
+                "message": f"Could not confirm the approved target set: {exc}"}
+
+    approved_assignments = set(request.get("assignment_ids") or ())
+    approved_paths = set(request.get("grant_path_ids") or ())
+    if approved_assignments != live_assignments:
+        return {"request_id": request_id, "status": "failed",
+                "message": f"Approved assignment targets no longer match the "
+                           f"source. Approved {_describe(approved_assignments)}; "
+                           f"found {_describe(live_assignments)}. Re-scan before "
+                           f"approving."}
+    if approved_paths != live_paths:
+        return {"request_id": request_id, "status": "failed",
+                "message": f"Approved grant-path targets no longer match the "
+                           f"source. Approved {_describe(approved_paths)}; "
+                           f"found {_describe(live_paths)}. Re-scan before "
+                           f"approving."}
 
     args = (["remove-sudo", username] if native["native_type"] == "sudo"
             else ["remove-group", username, native["native_id"]])
