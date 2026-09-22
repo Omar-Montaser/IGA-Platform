@@ -1,0 +1,102 @@
+{
+  "schema_version": "1.0.0",
+  "mapping_version": "1.0.0",
+  "source": "linux-lab",
+  "generated_at": "2026-09-22T10:13:21Z",
+  "note": "Native-to-generic mapping owned by Module 3. Generic entitlement IDs never appear on the target system.",
+  "entitlements": {
+    "ent:collaboration:workspace-read": {
+      "native_type": "posix_group",
+      "native_id": "collaboration_workspace_read"
+    },
+    "ent:collaboration:workspace-write": {
+      "native_type": "posix_group",
+      "native_id": "collaboration_workspace_write"
+    },
+    "ent:knowledge:articles-read": {
+      "native_type": "posix_group",
+      "native_id": "knowledge_articles_read"
+    },
+    "ent:hr:directory-read": {
+      "native_type": "posix_group",
+      "native_id": "hr_directory_read"
+    },
+    "ent:hr:employee-records-read": {
+      "native_type": "posix_group",
+      "native_id": "hr_employee_records_read"
+    },
+    "ent:hr:employee-records-write": {
+      "native_type": "posix_group",
+      "native_id": "hr_employee_records_write"
+    },
+    "ent:hr:payroll-admin": {
+      "native_type": "posix_group",
+      "native_id": "hr_payroll_admin"
+    },
+    "ent:finance:invoices-read": {
+      "native_type": "posix_group",
+      "native_id": "finance_invoices_read"
+    },
+    "ent:finance:invoices-manage": {
+      "native_type": "posix_group",
+      "native_id": "finance_invoices_manage"
+    },
+    "ent:finance:payments-approve": {
+      "native_type": "posix_group",
+      "native_id": "finance_payments_approve"
+    },
+    "ent:finance:ledger-admin": {
+      "native_type": "posix_group",
+      "native_id": "finance_ledger_admin"
+    },
+    "ent:sales:customer-records-read": {
+      "native_type": "posix_group",
+      "native_id": "sales_customer_records_read"
+    },
+    "ent:sales:customer-records-write": {
+      "native_type": "posix_group",
+      "native_id": "sales_customer_records_write"
+    },
+    "ent:sales:pricing-approve": {
+      "native_type": "posix_group",
+      "native_id": "sales_pricing_approve"
+    },
+    "ent:marketing:campaigns-read": {
+      "native_type": "posix_group",
+      "native_id": "marketing_campaigns_read"
+    },
+    "ent:marketing:campaigns-manage": {
+      "native_type": "posix_group",
+      "native_id": "marketing_campaigns_manage"
+    },
+    "ent:marketing:audience-export": {
+      "native_type": "posix_group",
+      "native_id": "marketing_audience_export"
+    },
+    "ent:engineering:source-read": {
+      "native_type": "posix_group",
+      "native_id": "engineering_source_read"
+    },
+    "ent:engineering:source-write": {
+      "native_type": "posix_group",
+      "native_id": "engineering_source_write"
+    },
+    "ent:engineering:production-deploy": {
+      "native_type": "posix_group",
+      "native_id": "engineering_production_deploy"
+    },
+    "ent:it:tickets-manage": {
+      "native_type": "posix_group",
+      "native_id": "it_tickets_manage"
+    },
+    "ent:it:infrastructure-admin": {
+      "native_type": "sudo",
+      "native_id": "90-iga-<username>",
+      "note": "granted as a sudoers drop-in file, not a group"
+    },
+    "ent:security:audit-read": {
+      "native_type": "posix_group",
+      "native_id": "security_audit_read"
+    }
+  }
+}
