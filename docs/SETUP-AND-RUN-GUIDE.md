@@ -434,19 +434,19 @@ cd "C:\Users\MONTASER YOUSUF\Documents\IGA-Platform"
 # Module 1 (HR Policy) - 67 tests
 & '.\governance-platform\access-review\.venv-ai\Scripts\python.exe' -m unittest discover -s governance-platform/hr-policy/tests
 
-# Module 4 (Access Review) - 135 tests
+# Module 4 (Access Review) - 164 tests
 & '.\governance-platform\access-review\.venv-ai\Scripts\python.exe' -m unittest discover -s governance-platform/access-review/tests
 
 # Module 3 (Connector) - 14 tests
 & '.\governance-platform\access-review\.venv-ai\Scripts\python.exe' -m unittest discover -s environment-integration/connector/tests -p test_offline_audit.py
 
-# UI Tests - 3 tests
+# UI Tests - 8 tests
 node --test governance-platform/access-review/tests/ui_runtime.test.cjs
 
 # JavaScript Syntax Check
 node --check governance-platform/access-review/static/app.js
 
-# Total: 219 tests
+# Total: 253 tests
 ```
 
 ---

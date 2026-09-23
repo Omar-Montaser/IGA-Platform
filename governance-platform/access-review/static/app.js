@@ -326,10 +326,10 @@ function renderCampaigns() {
     const container = document.getElementById('campaigns-list');
     const totals = state.campaigns.reduce((result, c) => ({ total: result.total + c.summary.total, pending: result.pending + c.summary.pending, critical: result.critical + c.summary.critical }), { total: 0, pending: 0, critical: 0 });
     document.getElementById('portfolio-summary').innerHTML = [
-        ['Active campaigns', state.campaigns.filter(c => !c.superseded_by).length, 'Current reviews'],
-        ['Awaiting review', totals.pending, 'Across visible campaigns'],
-        ['Critical findings', totals.critical, 'Prioritize these reviews'],
-        ['Total findings', totals.total, 'Including campaign history']
+        ['Active campaigns', state.campaigns.filter(c => !c.superseded_by).length, 'Current campaigns'],
+        ['Awaiting review', totals.pending, 'Pending decisions'],
+        ['Critical findings', totals.critical, 'Highest priority'],
+        ['Total findings', totals.total, 'Across campaigns']
     ].map(([label, value, note]) => `<div class="summary-card"><div class="label">${label}</div><div class="value">${value}</div><small>${note}</small></div>`).join('');
     container.innerHTML = state.campaigns.length ? state.campaigns.map(campaign => {
         const completed = campaign.summary.total - campaign.summary.pending;
@@ -340,9 +340,9 @@ function renderCampaigns() {
             <div class="campaign-counts"><span><strong>${campaign.summary.total}</strong> findings</span><span><strong>${campaign.summary.pending}</strong> pending</span><span class="risk-text"><strong>${campaign.summary.critical + campaign.summary.high}</strong> high / critical</span></div>
             <div class="progress-label"><span>Decisions recorded</span><strong>${completed} / ${campaign.summary.total}</strong></div>
             <progress value="${completed}" max="${campaign.summary.total || 1}" aria-label="Decisions recorded"></progress>
-            <div class="tile-footer"><span>${review ? `${review.fallback_cases} rules fallbacks` : 'Evidence available'}${campaign.warnings.length ? ` · ${campaign.warnings.length} warnings` : ''}</span><strong>Open review <span aria-hidden="true">-&gt;</span></strong></div>
+            <div class="tile-footer"><span>${review ? `${review.fallback_cases} rules reviews` : 'Source evidence'}${campaign.warnings.length ? ` · ${campaign.warnings.length} warnings` : ''}</span><strong>Open review <span aria-hidden="true">-&gt;</span></strong></div>
         </button>`;
-    }).join('') : '<div class="empty-state"><span class="empty-symbol" aria-hidden="true">[ ]</span><h3>Your next review starts here</h3><p>No campaigns are available. Administrators can start an access review from Environment.</p></div>';
+    }).join('') : '<div class="empty-state"><span class="empty-symbol" aria-hidden="true">[ ]</span><h3>No campaigns yet</h3><p>Admins can start an access review from Environment.</p></div>';
     container.querySelectorAll('[data-campaign-id]').forEach(card => card.addEventListener('click', () => loadCampaign(card.dataset.campaignId)));
 }
 
@@ -357,7 +357,7 @@ async function loadCampaign(campaignId) {
         state.currentFinding = null;
         state.findingRequest += 1;
         for (const id of ['finding-search', 'risk-filter', 'status-filter']) document.getElementById(id).value = '';
-        document.getElementById('finding-content').innerHTML = '<div class="empty-state"><span class="empty-symbol" aria-hidden="true">( )</span><h3>Select an access finding</h3><p>Explore its evidence, assess the risk, and make an informed decision.</p></div>';
+        document.getElementById('finding-content').innerHTML = '<div class="empty-state"><span class="empty-symbol" aria-hidden="true">( )</span><h3>Select a finding</h3><p>Review the evidence and record a decision.</p></div>';
         state.allFindings = campaign.findings;
         state.filteredFindings = campaign.findings;
         
@@ -376,14 +376,14 @@ function renderCampaignDetail() {
     // Header
     document.getElementById('campaign-name').textContent = campaign.name;
     const review = campaign.metadata?.review;
-    document.getElementById('campaign-context').textContent = `${campaign.source} · ${review ? `${review.cases - review.fallback_cases} AI-reviewed cases · ${review.fallback_cases} rules fallbacks` : 'Evidence-backed review'}`;
+    document.getElementById('campaign-context').textContent = `${campaign.source} · ${review ? `${review.cases - review.fallback_cases} model reviews · ${review.fallback_cases} rules reviews` : 'Source evidence review'}`;
     
     // Warnings
     const warningsEl = document.getElementById('campaign-warnings');
     if (campaign.warnings.length > 0) {
         warningsEl.hidden = false;
         warningsEl.innerHTML = `
-            <strong>⚠ Campaign Warnings:</strong>
+            <strong>Warnings:</strong>
             <ul>
                 ${campaign.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}
             </ul>
@@ -463,12 +463,12 @@ function renderCampaignDetail() {
     const completed = Math.max(0, total - pending);
     const journey = pending ? 1 : verified ? 3 : 2;
     const journeyStages = [
-        ['evidence', 'Evidence captured', 'Fresh source snapshot'],
+        ['evidence', 'Evidence captured', 'Latest source scan'],
         ['review', 'Findings ready', `${total} access findings`],
         ['decisions', 'Human decisions', pending ? `${pending} still pending` : `${completed} decisions recorded`],
         ['verify', 'Verified outcome', verified ? `${verified} removals verified` : 'Follows approved changes']
     ];
-    document.getElementById('review-journey').innerHTML = `<div class="journey-heading"><div><p class="eyebrow">REVIEW JOURNEY</p><h3>${pending ? 'Work through the queue' : verified ? 'Review complete with verified outcomes' : 'Ready for human decisions'}</h3></div><span class="journey-progress">${completed} / ${total} decisions</span></div><div class="journey-rail">${journeyStages.map(([key, label, detail], index) => { const state = index < journey ? 'complete' : index === journey ? 'current' : 'pending'; return `<div class="journey-stage ${state}"><span class="journey-marker">${state === 'complete' ? '✓' : index + 1}</span><div><strong>${label}</strong><small>${detail}</small></div></div>${index < journeyStages.length - 1 ? '<span class="journey-connector" aria-hidden="true"></span>' : ''}`; }).join('')}</div>`;
+    document.getElementById('review-journey').innerHTML = `<div class="journey-heading"><div><p class="eyebrow">REVIEW STATUS</p><h3>${pending ? 'Pending decisions' : verified ? 'Review complete' : 'Ready for decisions'}</h3></div><span class="journey-progress">${completed} / ${total} decisions</span></div><div class="journey-rail">${journeyStages.map(([key, label, detail], index) => { const state = index < journey ? 'complete' : index === journey ? 'current' : 'pending'; return `<div class="journey-stage ${state}"><span class="journey-marker">${state === 'complete' ? '✓' : index + 1}</span><div><strong>${label}</strong><small>${detail}</small></div></div>${index < journeyStages.length - 1 ? '<span class="journey-connector" aria-hidden="true"></span>' : ''}`; }).join('')}</div>`;
     
     // Findings
     applyFilters();
@@ -540,12 +540,12 @@ function renderFindingDetail() {
         <div class="detail-tabs" role="tablist" aria-label="Finding information"><button type="button" role="tab" id="tab-assessment" aria-selected="true" aria-controls="panel-assessment" data-detail-tab="assessment">Assessment</button><button type="button" role="tab" id="tab-evidence" aria-selected="false" aria-controls="panel-evidence" data-detail-tab="evidence" tabindex="-1">Access evidence</button><button type="button" role="tab" id="tab-context" aria-selected="false" aria-controls="panel-context" data-detail-tab="context" tabindex="-1">Identity context</button></div>
         <section id="panel-assessment" class="detail-tab-panel" role="tabpanel" aria-labelledby="tab-assessment">
             <div class="assessment-callout"><p class="eyebrow">${assessment?.status === 'ready' ? 'AI ASSESSMENT' : 'RULES FALLBACK · NOT AI'}</p><h3>${escapeHtml(friendly(f.recommended_action || f.recommendation))}</h3><p>${escapeHtml(f.item_assessment?.reasoning || assessment?.reasoning || 'No assessment is available.')}</p></div>
-            <div class="finding-detail-section"><h3>Policy & risk</h3><p>${escapeHtml(f.policy_fact?.text || friendly(f.policy_result))}</p><div class="risk-score"><strong>${f.risk_score}<small>/100</small></strong><span>Risk triage score<br><small>A heuristic, not an authorization decision</small></span></div>${(f.signals || []).map(signal => `<div class="signal-item"><span><strong>${escapeHtml(friendly(signal.code))}</strong><small>${escapeHtml(signal.message)}</small></span><span class="signal-points">+${signal.points}</span></div>`).join('')}</div>
+            <div class="finding-detail-section"><h3>Policy and risk</h3><p>${escapeHtml(f.policy_fact?.text || friendly(f.policy_result))}</p><div class="risk-score"><strong>${f.risk_score}<small>/100</small></strong><span>Risk score<br><small>For triage only. Not an access decision.</small></span></div>${(f.signals || []).map(signal => `<div class="signal-item"><span><strong>${escapeHtml(friendly(signal.code))}</strong><small>${escapeHtml(signal.message)}</small></span><span class="signal-points">+${signal.points}</span></div>`).join('')}</div>
             ${f.mandatory_human_review ? `<div class="notice"><strong>Human review required</strong><p>${(f.human_review_reasons || []).map(reason => escapeHtml(friendly(reason))).join(' · ')}</p></div>` : ''}
-            ${assessment ? `<details class="assessment-details"><summary>Full case assessment & provider</summary><p>${escapeHtml(assessment.reasoning || '')}</p><p>Provider: <strong>${escapeHtml(assessment.provider)}</strong>${assessment.model ? ` · Model: ${escapeHtml(assessment.model)}` : ''}${assessment.fallback_reason ? ` · Fallback: ${escapeHtml(friendly(assessment.fallback_reason))}` : ''}${assessment.attempted_provider ? ` · Attempted: ${escapeHtml(assessment.attempted_provider)}` : ''}</p><p>${assessment.status === 'ready' ? `Model self-reported confidence: ${Math.round(assessment.confidence * 100)}% (not a measured probability)` : 'Confidence is not applicable to rules fallback.'}</p>${list(assessment.open_questions || [])}${list(assessment.missing_evidence || [])}<p class="help-text">${(f.item_assessment?.evidence_refs || []).map(escapeHtml).join(', ')}</p></details>` : ''}
+            ${assessment ? `<details class="assessment-details"><summary>Assessment details</summary><p>${escapeHtml(assessment.reasoning || '')}</p><p>Provider: <strong>${escapeHtml(assessment.provider)}</strong>${assessment.model ? ` · Model: ${escapeHtml(assessment.model)}` : ''}${assessment.fallback_reason ? ` · Fallback: ${escapeHtml(friendly(assessment.fallback_reason))}` : ''}${assessment.attempted_provider ? ` · Attempted: ${escapeHtml(assessment.attempted_provider)}` : ''}</p><p>${assessment.status === 'ready' ? `Model confidence: ${Math.round(assessment.confidence * 100)}% (self-reported)` : 'Rules review has no model confidence.'}</p>${list(assessment.open_questions || [])}${list(assessment.missing_evidence || [])}<p class="help-text">${(f.item_assessment?.evidence_refs || []).map(escapeHtml).join(', ')}</p></details>` : ''}
         </section>
         <section id="panel-evidence" class="detail-tab-panel" role="tabpanel" aria-labelledby="tab-evidence" hidden>
-            <div class="finding-detail-section"><h3>Observed access paths</h3><p class="help-text">How this account holds the reviewed capability.</p>${(f.review_evidence?.grant_paths || []).map(path => `<div class="grant-path"><span class="badge">${escapeHtml(path.grant_type)}</span><div>${path.path.map(node => `<span>${escapeHtml(node.ref)}</span>`).join('<b aria-hidden="true">-&gt;</b>')}</div></div>`).join('') || '<p>No grant paths are recorded for this finding.</p>'}</div>
+            <div class="finding-detail-section"><h3>Access paths</h3><p class="help-text">How this account receives access.</p>${(f.review_evidence?.grant_paths || []).map(path => `<div class="grant-path"><span class="badge">${escapeHtml(path.grant_type)}</span><div>${path.path.map(node => `<span>${escapeHtml(node.ref)}</span>`).join('<b aria-hidden="true">-&gt;</b>')}</div></div>`).join('') || '<p>No grant paths are recorded for this finding.</p>'}</div>
             ${(f.evidence_gaps || []).length ? `<div class="notice"><strong>Evidence limits</strong>${list(f.evidence_gaps)}</div>` : ''}
             <div class="detail-grid">${field('Observation', f.evidence?.scanned_at ? formatDate(f.evidence.scanned_at) : null)}${field('Scan ID', f.evidence?.scan_id)}${field('Mapping version', f.evidence?.mapping_version)}${field('HR snapshot', f.evidence?.snapshot_at ? formatDate(f.evidence.snapshot_at) : null)}</div>
             <details class="assessment-details"><summary>Full source evidence</summary><pre>${escapeHtml(JSON.stringify(f.review_evidence || {}, null, 2))}</pre></details>
@@ -590,7 +590,7 @@ function renderDecisionForm(finding) {
     
     return `
         <div class="decision-form">
-            <p class="eyebrow">YOUR DECISION</p><h3>Complete this review</h3><p class="help-text">Record a reason. Access changes follow the approved remediation workflow.</p>
+            <p class="eyebrow">YOUR DECISION</p><h3>Record a decision</h3><p class="help-text">Add a reason. Approved revocations go through remediation.</p>
             <form id="decision-form">
                 <div class="form-group">
                     <label>Action</label>
@@ -624,7 +624,7 @@ function renderDecisionForm(finding) {
                         required 
                         minlength="8" 
                         maxlength="2000"
-                        placeholder="Enter your justification for this decision..."
+                        placeholder="Why are you taking this action?"
                     ></textarea>
                 </div>
                 
@@ -633,7 +633,7 @@ function renderDecisionForm(finding) {
                         <div class="checkbox-group">
                             <input type="checkbox" id="acknowledge-risk" name="acknowledge_risk" value="true">
                             <label for="acknowledge-risk">
-                                I acknowledge the recorded risk before certifying this access
+                                I acknowledge the risk before certifying this access
                             </label>
                         </div>
                     </div>
@@ -664,7 +664,7 @@ function attachFindingHandlers(finding) {
                 showLoading();
                 await api.retryRemediation(finding.remediation.id);
                 showLoading(false);
-                notify('Retry processed. The latest verification status is shown below.');
+                notify('Retry processed. Status updated.');
                 await loadFinding(finding.id);
             } catch (error) {
                 showLoading(false);
@@ -915,7 +915,7 @@ async function retryCampaignRun(runId, source) {
 
 function renderEnvironment(data) {
     document.getElementById('env-freshness').textContent =
-        'Inventory is a saved observation. Start access review requests a fresh scan. Status updates do not scan the target.';
+        'Inventory is saved. Start a review to scan again. Refresh only reads saved status.';
     const container = document.getElementById('environment-content');
     // Status polls usually change only generated_at. Keep the actual controls
     // (and keyboard focus) in place when the displayed state is unchanged.
@@ -927,7 +927,7 @@ function renderEnvironment(data) {
     const selection = focused?.tagName === 'INPUT' ? [focused.selectionStart, focused.selectionEnd] : null;
     const expanded = new Set([...container.querySelectorAll('details[data-details-key]')]
         .filter(details => details.open).map(details => details.dataset.detailsKey));
-    const modes = { simulated: 'Simulated source', captured_fixture: 'Captured fixture · read only', live: 'Live connector (configured)', unknown: 'Transport not specified' };
+    const modes = { simulated: 'Simulated source', captured_fixture: 'Captured fixture, read only', live: 'Live connector, configured', unknown: 'Transport not specified' };
     const labels = { queued: 'Queued', scanning: 'Scanning environment', validating: 'Validating evidence', reviewing: 'Reviewing access', completed: 'Review ready', failed: 'Run failed', blocked: 'Review blocked', never_scanned: 'Not scanned yet', last_known: 'Last-known inventory' };
     const runStages = [
         ['queued', 'Queued', 'Run accepted'],
@@ -958,7 +958,7 @@ function renderEnvironment(data) {
             <h3>${escapeHtml(source.name)}</h3>
             <p class="help-text">${escapeHtml(source.source)} · ${escapeHtml(modes[source.mode] || modes.unknown)}</p>
             <p role="status">${escapeHtml(labels[source.status] || source.status)}</p>
-            ${inv ? `<p>Observed ${escapeHtml(formatDate(inv.scanned_at))} · ${inv.complete ? 'Complete within declared scope' : 'Partial evidence'}<br>
+            ${inv ? `<p>Observed ${escapeHtml(formatDate(inv.scanned_at))} · ${inv.complete ? 'Complete within scope' : 'Partial evidence'}<br>
                 <small>Scan: ${escapeHtml(inv.scan_id)} · Mapping: ${escapeHtml(inv.mapping_version)}</small></p>
                 <div class="summary-cards">
                 <div class="summary-card"><h4>Accounts</h4><p>${inv.counts.accounts}</p></div>
@@ -967,7 +967,7 @@ function renderEnvironment(data) {
                 <div class="summary-card"><h4>Accounts without access</h4><p>${inv.counts.unassigned_accounts}</p></div></div>
                 <details data-details-key="${escapeHtml(source.source)}:inventory"><summary data-focus-key="${escapeHtml(source.source)}:inventory">Inspect observed accounts and access</summary><div class="env-table-wrap"><table class="env-table">
                 <thead><tr><th>Account</th><th>State</th><th>Type</th><th>Entitlements</th><th>Direct</th><th>Inherited</th><th>Held access</th></tr></thead>
-                <tbody>${rows}</tbody></table></div></details>` : '<p>No inventory has been observed. Counts are unknown until a scan completes.</p>'}
+                <tbody>${rows}</tbody></table></div></details>` : '<p>No inventory yet. Counts appear after a scan.</p>'}
             ${source.setup_error ? `<p class="warning-banner">${escapeHtml(source.setup_error)}</p>` : ''}
             <form class="start-review-form">
                 <label for="campaign-name-${index}">Campaign name</label>
@@ -978,16 +978,16 @@ function renderEnvironment(data) {
                 <div class="run-progress-heading"><div><p class="eyebrow">CAMPAIGN RUN</p><h3>${escapeHtml(run.name)}</h3></div><span class="run-state ${escapeHtml(run.state)}"><i aria-hidden="true"></i>${escapeHtml(labels[run.state] || run.state)}</span></div>
                 <div class="run-progress-meta"><span>Attempt ${run.attempts} of 3</span><span>${run.scan_id ? 'Snapshot accepted' : 'Waiting for snapshot'}</span></div>
                 ${runStageRail(run)}
-                <details data-details-key="${escapeHtml(source.source)}:progress"><summary data-focus-key="${escapeHtml(source.source)}:progress">Recorded progress</summary><ol>${(run.events || []).map(event => `<li>${escapeHtml(formatDate(event.timestamp))}: ${escapeHtml(labels[event.state] || event.state)}${event.message ? ' — ' + escapeHtml(event.message) : ''}</li>`).join('')}</ol></details>
+                <details data-details-key="${escapeHtml(source.source)}:progress"><summary data-focus-key="${escapeHtml(source.source)}:progress">Recorded progress</summary><ol>${(run.events || []).map(event => `<li>${escapeHtml(formatDate(event.timestamp))}: ${escapeHtml(labels[event.state] || event.state)}${event.message ? ' / ' + escapeHtml(event.message) : ''}</li>`).join('')}</ol></details>
                 ${run.error ? `<p class="error">${escapeHtml(run.error)}</p>` : ''}
                 ${run.retry_guidance ? `<p>${escapeHtml(run.retry_guidance)}</p>` : ''}
                 ${run.can_retry ? `<button type="button" data-focus-key="${escapeHtml(source.source)}:retry" data-retry="${escapeHtml(run.id)}" ${busy ? 'disabled' : ''}>Retry run</button>` : ''}
                 ${run.campaign_id ? `<button type="button" data-focus-key="${escapeHtml(source.source)}:findings" data-open-campaign="${escapeHtml(run.campaign_id)}">Open review findings</button>` : ''}
             </div>` : ''}
             ${source.latest_campaign ? `<p>Latest campaign: <button type="button" class="secondary" data-focus-key="${escapeHtml(source.source)}:latest" data-open-campaign="${escapeHtml(source.latest_campaign.id)}">${escapeHtml(source.latest_campaign.name)}</button></p>` : ''}
-            ${review ? `<p class="help-text">Latest campaign: ${review.cases - review.fallback_cases} AI-reviewed cases; ${review.fallback_cases} rules fallbacks. Human decisions are still required.</p>` : ''}
+            ${review ? `<p class="help-text">Latest campaign: ${review.cases - review.fallback_cases} model reviews; ${review.fallback_cases} rules reviews. Human decisions are required.</p>` : ''}
         </article>`;
-    }).join('') : '<p>No environments configured. Add a connector and input references to the server configuration, or start an empty simulated demo.</p>';
+    }).join('') : '<p>No environments configured. Add a connector and inputs, or start an empty demo.</p>';
     container.querySelectorAll('.environment-card').forEach(card => {
         const source = card.dataset.source;
         card.querySelectorAll('details[data-details-key]').forEach(details => {

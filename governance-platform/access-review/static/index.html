@@ -12,8 +12,8 @@
             <div class="login-container">
                 <div class="brand-mark" aria-hidden="true">i</div>
                 <p class="eyebrow">IDENTITY GOVERNANCE</p>
-                <h1>Clarity for every<br>access decision.</h1>
-                <p class="login-intro">Your workspace for understanding access,<br>reviewing risk, and keeping people in control.</p>
+                <h1>Review access<br>with evidence.</h1>
+                <p class="login-intro">See who has access,<br>record decisions, and track changes.</p>
                 <form id="login-form" aria-label="Authentication">
                     <h2>Welcome to IGA Access Review</h2>
                     <label for="token-input">Reviewer Credential</label>
@@ -27,7 +27,7 @@
                         aria-describedby="token-help"
                     >
                     <p id="token-help" class="help-text">
-                        Paste your reviewer credential from the token file
+                        Use the credential from the token file
                     </p>
                     <button type="submit">Sign In <span aria-hidden="true">→</span></button>
                     <div id="login-error" class="error" role="alert" aria-live="polite"></div>
@@ -37,7 +37,7 @@
 
         <div id="main-view" class="view hidden">
             <header class="app-header">
-                <div class="workspace-heading"><span class="workspace-dot" aria-hidden="true"></span><span>Governance workspace</span><span class="header-divider">/</span><strong id="page-location">Overview</strong></div>
+                <div class="workspace-heading"><span class="workspace-dot" aria-hidden="true"></span><span>IGA workspace</span><span class="header-divider">/</span><strong id="page-location">Access reviews</strong></div>
                 <div class="header-info">
                     <span id="user-name"></span>
                     <span id="user-role" class="badge"></span>
@@ -51,12 +51,12 @@
                 <button type="button" class="nav-btn" data-view="environment" id="environment-nav-btn" hidden><span class="nav-icon" aria-hidden="true">◈</span>Environment</button>
                 <button type="button" class="nav-btn active" data-view="campaigns"><span class="nav-icon" aria-hidden="true">▤</span>Access reviews</button>
                 <button type="button" class="nav-btn" data-view="audit" id="audit-nav-btn" hidden><span class="nav-icon" aria-hidden="true">◷</span>Audit trail</button>
-                <div class="sidebar-note"><span class="workspace-dot" aria-hidden="true"></span>Human decisions. Verified outcomes.<small>Evidence informs every review.<br>You stay in control.</small></div>
+                <div class="sidebar-note"><span class="workspace-dot" aria-hidden="true"></span>Review access. Track decisions.<small>Source evidence and audit history<br>stay with each review.</small></div>
             </nav>
 
             <div id="campaigns-view" class="content-view">
                 <div class="view-header">
-                    <div><p class="eyebrow">ACCESS GOVERNANCE</p><h2>Access reviews</h2><p class="view-description">Focus on the access that needs your attention.</p></div>
+                    <div><p class="eyebrow">ACCESS REVIEWS</p><h2>Access reviews</h2><p class="view-description">Review pending access decisions.</p></div>
                     <div class="actions">
                         <button type="button" id="refresh-campaigns-btn" aria-label="Refresh campaign list">
                             Refresh
@@ -64,7 +64,7 @@
                     </div>
                 </div>
                 <div id="portfolio-summary" class="summary-cards"></div>
-                <div class="section-heading"><h3>Your campaigns</h3><span class="help-text">Evidence-backed, human-led reviews</span></div>
+                <div class="section-heading"><h3>Your campaigns</h3><span class="help-text">Reviews with source evidence</span></div>
                 <div id="campaigns-list" role="region" aria-label="Campaigns"></div>
                 <div id="campaigns-error" class="error" role="alert" aria-live="polite"></div>
             </div>
@@ -72,7 +72,7 @@
             <div id="campaign-detail-view" class="content-view hidden">
                 <div class="view-header">
                     <button type="button" id="back-to-campaigns-btn" aria-label="Back to campaigns list">
-                        ← Back to Campaigns
+                        Back to campaigns
                     </button>
                     <div class="campaign-heading"><p class="eyebrow">ACCESS REVIEW</p><h2 id="campaign-name"></h2><p id="campaign-context" class="view-description"></p></div>
                     <div class="actions" id="campaign-actions"></div>
@@ -81,7 +81,7 @@
                 <div id="campaign-summary" class="summary-cards"></div>
                 <div id="review-journey" class="review-journey" aria-label="Access review stages"></div>
                 <div class="findings-controls">
-                    <div class="search-field"><label for="finding-search" class="sr-only">Search identities or access</label><span aria-hidden="true">⌕</span><input id="finding-search" type="search" placeholder="Search people, accounts, or access…"></div>
+                    <div class="search-field"><label for="finding-search" class="sr-only">Search identities or access</label><span aria-hidden="true">⌕</span><input id="finding-search" type="search" placeholder="Search people, accounts, or access..."></div>
                     <label for="risk-filter">Risk Level:</label>
                     <select id="risk-filter" aria-label="Filter by risk level">
                         <option value="">All</option>
@@ -102,12 +102,12 @@
                         <option value="revoke_failed">Revoke Failed</option>
                         <option value="verification_failed">Verification Failed</option>
                     </select>
-                    <label for="finding-sort" class="sr-only">Sort findings</label><select id="finding-sort" aria-label="Sort findings"><option value="risk">Highest risk first</option><option value="name">Identity A–Z</option><option value="pending">Pending first</option></select>
+                    <label for="finding-sort" class="sr-only">Sort findings</label><select id="finding-sort" aria-label="Sort findings"><option value="risk">Highest risk first</option><option value="name">Identity A-Z</option><option value="pending">Pending first</option></select>
                     <button type="button" id="clear-filters-btn" class="text-button">Clear filters</button>
                 </div>
                 <div class="review-workspace">
                     <section class="review-queue"><div class="queue-heading"><h3>Review queue</h3><span id="queue-count" class="badge" aria-live="polite"></span></div><div id="findings-list" role="region" aria-label="Findings"></div></section>
-                    <section id="review-panel" class="review-panel" aria-label="Selected access finding"><div id="finding-content"><div class="empty-state"><span class="empty-symbol" aria-hidden="true">◎</span><h3>A clearer view of every decision</h3><p>Select a finding to explore its evidence and record your decision.</p></div></div><div id="finding-error" class="error" role="alert" aria-live="polite"></div></section>
+                    <section id="review-panel" class="review-panel" aria-label="Selected access finding"><div id="finding-content"><div class="empty-state"><span class="empty-symbol" aria-hidden="true">◎</span><h3>Select a finding</h3><p>Review its evidence and record a decision.</p></div></div><div id="finding-error" class="error" role="alert" aria-live="polite"></div></section>
                 </div>
                 <div id="campaign-detail-error" class="error" role="alert" aria-live="polite"></div>
             </div>
@@ -115,7 +115,7 @@
             <div id="finding-detail-view" class="content-view hidden">
                 <div class="view-header">
                     <button type="button" id="back-to-findings-btn" aria-label="Back to findings list">
-                        ← Back to Findings
+                        Back to findings
                     </button>
                     <h2>Finding Detail</h2>
                 </div>
@@ -123,7 +123,7 @@
 
             <div id="environment-view" class="content-view hidden">
                 <div class="view-header">
-                    <div><p class="eyebrow">YOUR CONNECTED SOURCES</p><h2>Environment</h2><p class="view-description">Understand your access landscape. Start a review with fresh evidence.</p></div>
+                    <div><p class="eyebrow">CONNECTED SOURCES</p><h2>Environment</h2><p class="view-description">View sources and start a fresh review.</p></div>
                     <div class="actions">
                         <button type="button" id="refresh-environment-btn">Refresh status</button>
                     </div>
@@ -135,7 +135,7 @@
 
             <div id="audit-view" class="content-view hidden">
                 <div class="view-header">
-                    <div><p class="eyebrow">ACCOUNTABILITY, BUILT IN</p><h2>Audit trail</h2><p class="view-description">Follow the evidence behind every recorded decision.</p></div>
+                    <div><p class="eyebrow">AUDIT</p><h2>Audit trail</h2><p class="view-description">Review decisions and system actions.</p></div>
                     <div class="actions">
                         <label for="audit-campaign-select">Campaign:</label>
                         <select id="audit-campaign-select" aria-label="Select campaign for audit log">

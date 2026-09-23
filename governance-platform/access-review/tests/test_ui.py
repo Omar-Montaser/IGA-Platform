@@ -253,6 +253,13 @@ class UIBehaviorTests(unittest.TestCase):
         self.assertIn('--color-primary:#ba2025', css)
         for marker in ('applyFilters', 'saveDecisionDraft', 'previous-finding', 'panel-evidence', 'detail-tabs', 'run-stage-rail', 'journeyStages', 'RULES FALLBACK'):
             self.assertIn(marker, js)
+
+    def test_ui_copy_does_not_use_long_dash_punctuation(self):
+        static_dir = Path(__file__).parent.parent / 'static'
+        for path in (static_dir / 'index.html', static_dir / 'styles.css', static_dir / 'app.js'):
+            copy = path.read_text(encoding='utf-8')
+            self.assertNotIn('\u2014', copy, f'Em dash found in {path.name}')
+            self.assertNotIn('\u2013', copy, f'En dash found in {path.name}')
     
     def test_javascript_handles_401_by_logging_out(self):
         """JavaScript should handle 401 responses by logging out."""

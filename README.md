@@ -23,16 +23,17 @@ Module 4; Module 3 owns native discovery, mappings and approved target changes.
 
 - **[Setup and Run Guide](docs/SETUP-AND-RUN-GUIDE.md)** - Complete end-to-end setup including Linux VM, connector, and portal
 - **[Feature Comparison & Roadmap](docs/IGA-PLATFORM-COMPARISON-AND-ROADMAP.md)** - Comparison with commercial IGA platforms and future development roadmap
+- **[Presentation Runbook](docs/PRESENTATION-RUNBOOK.md)** - Repeatable demo flow, architecture story, safe claims and test commands
 
-## Verified audit outcomes — 2026-09-23
+## Verified audit outcomes — 2026-09-24
 
 | Check executed | Outcome |
 | --- | --- |
 | Module 1 contract/generator suite | 67 tests passed. Fixed Windows line-ending reproducibility without changing data; `.gitattributes` keeps generated fixtures LF-only. |
-| Module 4 suite | 133 tests passed. Includes AI protocol validation, privacy consent, ownership blockers, approvals, persistence and simulated revoke/rescan verification. Provider responses are mocked. |
+| Module 4 suite | 164 tests passed. Includes AI protocol validation, privacy consent, ownership blockers, approvals, durable runs, lease recovery, shutdown, persistence and simulated revoke/rescan verification. Provider responses are mocked. |
 | Offline connector/integration suite | 14 tests passed. Real localhost HTTP connector plus authenticated Module 4 import/export, persistence and audit integrity. No Linux target changes. |
-| JavaScript runtime suite | 3 tests passed with a minimal DOM stub: safe attribute/text escaping, logout cleanup and stale-session response rejection. |
-| Syntax checks | JavaScript and both PowerShell setup scripts passed. |
+| JavaScript runtime suite | 8 tests passed with a minimal DOM stub: safe attribute/text escaping, logout cleanup, stale-session response rejection, polling, recovery, retry and duplicate-submit suppression. |
+| Syntax checks | JavaScript syntax passed; the setup scripts remain documented as the supported Windows entry points. |
 | Live AI check | Nonzero exit: `provider=rules`, `status=fallback`, `fallback_reason=not_configured`. No provider key was available. |
 
 **367/367 captured assignments match the corrected Module 2 policy labels:**
@@ -81,9 +82,13 @@ demonstrated**. Use the secure setup and synthetic inference check in the
 [Module 4 guide](governance-platform/access-review/README.md) to activate AI.
 
 This audit did not run native Linux seeding, SSH changes, RSA integration or
-real-browser visual/accessibility testing. Existing lab helpers/ground-truth
-files are not redeployed automatically by editing this repository. Production
-SSO, operational hardening, large-scale scans and model-quality evaluation remain
-follow-on work. The tested setup uses editable installs; packaged-wheel UI
-assets still need acceptance work. Existing campaign history was preserved.
+the latest red/white/grey UI polish through a real browser. The prior
+environment-first browser walkthrough passed before the final stage-rail polish;
+the latest UI changes are covered by the UI route and runtime suites and should
+receive one fresh browser pass before a live presentation. Existing lab
+helpers/ground-truth files are not redeployed automatically by editing this
+repository. Production SSO, operational hardening, large-scale scans and
+model-quality evaluation remain follow-on work. The tested setup uses editable
+installs; packaged-wheel UI assets still need acceptance work. Existing campaign
+history was preserved.
 Passing tests cover specific cases, not a guarantee of zero bugs.
