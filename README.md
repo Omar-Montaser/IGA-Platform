@@ -1,94 +1,134 @@
-# IGA access review prototype
+# IGA Platform
 
-The platform separates HR context and policies from the systems under review
-and their connectors. The governance core consumes generic identity and
-entitlement data.
+An evidence-led access review platform.
 
-| Module | Scope | Status |
-| --- | --- | --- |
-| 1 | HR identities and generic policies | Implemented with synthetic data, schemas, validation, consumer API, CLI, and tests. |
-| 2 | Linux IAM environment | Seeder/helpers implemented. Pure planning/classification checked; native provisioning not run in this audit. |
-| 3 | Integration and access discovery | SSH/local/fixture connector implemented. Captured discovery and real localhost HTTP tested; live SSH/removal not revalidated. |
-| 4 | AI access review platform | Core implemented: person-level independent AI review, deterministic safety constraints, authenticated reviewer UI/API, durable decisions, exact grant-path remediation, fresh-scan verification, audit trail, CLI, and tests. |
+It combines HR context, observed environment access and human decisions in one
+auditable workflow:
 
-Start with [Module 1](governance-platform/hr-policy/README.md) for the HR and
-policy contract, then [Module 4](governance-platform/access-review/README.md)
-for campaign ingestion, review decisions, and verified remediation.
-
-The [governance platform](governance-platform/README.md) owns HR policy inputs,
-access reviews, and the reviewer application. Module 1 publishes context to
-Module 4; Module 3 owns native discovery, mappings and approved target changes.
-
-## Documentation
-
-- **[Setup and Run Guide](docs/SETUP-AND-RUN-GUIDE.md)** - Complete end-to-end setup including Linux VM, connector, and portal
-- **[Feature Comparison & Roadmap](docs/IGA-PLATFORM-COMPARISON-AND-ROADMAP.md)** - Comparison with commercial IGA platforms and future development roadmap
-- **[Presentation Runbook](docs/PRESENTATION-RUNBOOK.md)** - Repeatable demo flow, architecture story, safe claims and test commands
-
-## Verified audit outcomes — 2026-09-24
-
-| Check executed | Outcome |
-| --- | --- |
-| Module 1 contract/generator suite | 67 tests passed. Fixed Windows line-ending reproducibility without changing data; `.gitattributes` keeps generated fixtures LF-only. |
-| Module 4 suite | 164 tests passed. Includes AI protocol validation, privacy consent, ownership blockers, approvals, durable runs, lease recovery, shutdown, persistence and simulated revoke/rescan verification. Provider responses are mocked. |
-| Offline connector/integration suite | 14 tests passed. Real localhost HTTP connector plus authenticated Module 4 import/export, persistence and audit integrity. No Linux target changes. |
-| JavaScript runtime suite | 8 tests passed with a minimal DOM stub: safe attribute/text escaping, logout cleanup, stale-session response rejection, polling, recovery, retry and duplicate-submit suppression. |
-| Syntax checks | JavaScript syntax passed; the setup scripts remain documented as the supported Windows entry points. |
-| Live AI check | Nonzero exit: `provider=rules`, `status=fallback`, `fallback_reason=not_configured`. No provider key was available. |
-
-**367/367 captured assignments match the corrected Module 2 policy labels:**
-319 expected, 34 lifecycle-restricted, 9 restricted and 5 unlisted. This is a
-deterministic fixture consistency result, **not an AI accuracy measurement**.
-
-### Fixes implemented
-
-- Unresolved ownership now blocks decisions in the service. Hard policy rules
-  remove invalid UI actions. Mandatory review requires risk acknowledgement
-  even when the model recommends retaining access.
-- Unknown Linux grant dates/group privilege remain `null`. Missing usage,
-  history and justification are evidence limits, not invented facts. Reviewers
-  can inspect per-item source evidence and model citations.
-- Non-synthetic imports require consent before external inference, including
-  imports through demo mode or direct service calls.
-- Orphan/cyclic paths and incomplete/malformed native captures fail closed.
-  Revocation payloads are validated before target access; UID lookup and helper
-  exit-code checks cannot silently select/approve the wrong target.
-- Preserved and repaired the Groq integration: Llama 3.3 uses JSON-object mode
-  with strict local validation; truncated/refused/tool outputs are rejected.
-  Gemini/Groq use bounded reads, request pacing and quota cooldown, with no
-  automatic paid fallback. [Groq output-mode documentation](https://console.groq.com/docs/structured-outputs).
-- Fixed HTML attribute escaping and clearing private review data on logout.
-  Late responses from previous sessions are discarded.
-
-### Reproduce the checks
-
-From the repository root on Windows, with the Module 4 environment installed:
-
-```powershell
-.\governance-platform\access-review\.venv-ai\Scripts\python.exe -m unittest discover -s governance-platform/hr-policy/tests
-.\governance-platform\access-review\.venv-ai\Scripts\python.exe -m unittest discover -s governance-platform/access-review/tests
-.\governance-platform\access-review\.venv-ai\Scripts\python.exe -m unittest discover -s environment-integration/connector/tests -p test_offline_audit.py
-node --test governance-platform/access-review/tests/ui_runtime.test.cjs
+```text
+HR and policy data
+        ↓
+Environment scan
+        ↓
+Policy evaluation
+        ↓
+Access review campaign
+        ↓
+Human decision
+        ↓
+Remediation and fresh-scan verification
 ```
 
-The separate legacy live connector script is skipped during test discovery.
-It requires explicit execution, a disposable configured lab, and
-`IGA_ALLOW_LIVE_MUTATIONS=1` for non-fixture transports.
+The current product is centered on environment-first access reviews. An admin
+can see configured sources before a campaign exists, start a durable run, follow
+its progress, review findings, record decisions and inspect the audit trail.
 
-### Not verified / remaining limitations
+## Start here
 
-Live model availability, free quota and semantic review quality are **not
-demonstrated**. Use the secure setup and synthetic inference check in the
-[Module 4 guide](governance-platform/access-review/README.md) to activate AI.
+| Goal | Guide |
+| --- | --- |
+| Run the complete local demo | [Setup and Run Guide](docs/SETUP-AND-RUN-GUIDE.md) |
+| Prepare a presentation | [Presentation Runbook](docs/PRESENTATION-RUNBOOK.md) |
+| Understand the API and recovery rules | [Module 4 contract](governance-platform/access-review/docs/contract.md) |
+| Read the product comparison and roadmap | [IGA comparison and roadmap](docs/IGA-PLATFORM-COMPARISON-AND-ROADMAP.md) |
+| Understand the HR and policy input contract | [Module 1 README](governance-platform/hr-policy/README.md) |
+| Understand discovery and remediation | [Connector README](environment-integration/connector/README.md) |
 
-This audit did not run native Linux seeding, SSH changes, RSA integration or
-the latest red/white/grey UI polish through a real browser. The prior
-environment-first browser walkthrough passed before the final stage-rail polish;
-the latest UI changes are covered by the UI route and runtime suites and should
-receive one fresh browser pass before a live presentation. Existing lab
-helpers/ground-truth files are not redeployed automatically by editing this
-repository. Production SSO, operational hardening, large-scale scans and
-model-quality evaluation remain follow-on work. The tested setup uses editable
-installs; packaged-wheel UI assets still need acceptance work. Existing campaign
-history was preserved.
-Passing tests cover specific cases, not a guarantee of zero bugs.
+## Modules
+
+| Module | Responsibility | Current state |
+| --- | --- | --- |
+| 1. HR policy | Identities, lifecycle status, roles and policy expectations | Implemented with strict schemas, validation, CLI and tests |
+| 2. Linux IAM lab | Synthetic users, groups and policy scenarios | Planning and classification helpers implemented |
+| 3. Connector | Discovery, normalization, HTTP/SSH transport and approved changes | Fixture and localhost HTTP paths tested; live SSH needs revalidation |
+| 4. Access review | Campaigns, findings, decisions, remediation, verification and audit | Implemented with authenticated API, browser UI and durable runs |
+
+Module 1 publishes the context used by Module 4. Module 3 owns native discovery,
+mappings and target changes. Module 4 stays source-independent and consumes the
+normalized scan contract.
+
+## Offline demo
+
+From PowerShell at the repository root:
+
+```powershell
+Set-Location 'C:\Users\MONTASER YOUSUF\Documents\IGA-Platform'
+$env:IGA_AI_PROVIDER = 'rules'
+& '.\governance-platform\access-review\.venv-ai\Scripts\python.exe' -m iga_review.cli demo --empty --state-dir '.\governance-platform\access-review\.demo-review\presentation' --identities '.\governance-platform\hr-policy\data\identities.json' --policies '.\governance-platform\hr-policy\data\policies.json' --port 8042
+```
+
+Open `http://127.0.0.1:8042`. The command prints the path to the generated
+reviewer token. Keep that token local and paste it into the sign-in form.
+
+For a clean starting screen, use a new state directory. The `--empty` option
+does not delete an existing directory or reset previous simulated removals.
+
+### Demo flow
+
+1. Sign in as the administrator and open **Environment**.
+2. Confirm the source is visible before any campaign exists.
+3. Enter a campaign name and choose **Start access review**.
+4. Follow **Queued**, **Scanning**, **Validating**, **Reviewing** and **Review ready**.
+5. Open the findings, inspect evidence and record a human decision.
+6. Open **Audit trail** to review the recorded action.
+7. Reload, sign in again and confirm that the run and campaign remain available.
+
+Rules mode is an offline fallback. It does not represent a successful external
+model review.
+
+## Design rules
+
+- HR data says who the person is, their role and whether they should be active.
+- The environment scan says which accounts, entitlements and grant paths exist.
+- Ownership is never inferred from a matching name or username.
+- Every run pins its input files and accepted scan evidence.
+- Human decisions are authenticated, versioned and idempotent.
+- AI output is advisory and cannot override hard policy constraints.
+- A removal is verified only by a later complete scan that proves all target
+  grant paths are gone.
+- Audit events and accepted inventory snapshots are append-only.
+
+## Verification status
+
+Verified on 2026-09-24:
+
+| Check | Result |
+| --- | ---: |
+| Module 1 contract and generator suite | 67 passed |
+| Module 4 access-review suite | 164 passed |
+| Offline connector and integration suite | 14 passed |
+| JavaScript runtime suite | 8 passed |
+| Total automated tests | **253 passed** |
+| JavaScript syntax | Passed |
+
+The Module 4 suite covers durable runs, lease recovery, shutdown, retries,
+idempotency, freshness, correlation checks, atomic completion, authorization,
+consent, remediation and verification behavior. Provider calls are mocked or
+rules-only.
+
+Run the checks from the repository root:
+
+```powershell
+& '.\governance-platform\access-review\.venv-ai\Scripts\python.exe' -m unittest discover -s governance-platform/hr-policy/tests
+& '.\governance-platform\access-review\.venv-ai\Scripts\python.exe' -m unittest discover -s governance-platform/access-review/tests
+& '.\governance-platform\access-review\.venv-ai\Scripts\python.exe' -m unittest discover -s environment-integration/connector/tests -p test_offline_audit.py
+node --test governance-platform/access-review/tests/ui_runtime.test.cjs
+node --check governance-platform/access-review/static/app.js
+```
+
+The captured fixture contains 367 assignments: 319 expected, 34 lifecycle-
+restricted, 9 restricted and 5 unlisted. This is a deterministic fixture check,
+not an AI accuracy result.
+
+## Scope limits
+
+The following still need separate validation:
+
+- Native Linux seeding, live SSH discovery and native access changes
+- Live external model availability, quota behavior and review quality
+- A fresh real-browser pass after the latest UI stage-rail polish
+- Cross-browser accessibility testing
+- Production SSO, backups, metrics, rate limiting and worker supervision
+
+Existing campaign history and local live-state files are preserved. The tested
+setup uses editable installs; packaged-wheel UI assets need separate acceptance.
