@@ -60,6 +60,13 @@ SUDO_ENTITLEMENT = "ent:it:infrastructure-admin"
 # Deliberate access problems, expressed as (username, entitlement_id).
 # The issue type is not recorded here - it is derived from Module 1 policy.
 # --------------------------------------------------------------------------
+#
+# Two interchangeable scenarios. `--scenario b` rebuilds the same company with
+# a different set of problems, and the answer key is re-derived from Module 1
+# policy either way - so switching does not require maintaining a second
+# hand-written truth file. Useful for showing that the review reflects the
+# system as it is now rather than a result that was tuned once.
+# --------------------------------------------------------------------------
 EXTRA_GRANTS = [
     # cross-department and restricted access held by active staff
     ("alex.morgan.0002",   "ent:hr:employee-records-read"),
@@ -102,6 +109,64 @@ EARLY_PROVISIONED = {
 PROPERLY_DEPROVISIONED = {
     "taylor.bennett.0035", "jules.malik.0047", "chen.hayes.0059",
     "sam.santos.0034", "ira.lane.0046", "sam.brooks.0070",
+}
+
+# --------------------------------------------------------------------------
+# Scenario B - a different company state, same policy.
+#
+# Deliberately not a tweak of A: different people, a different mix of problem
+# types, and the lifecycle cases inverted. Everyone who was cleaned up
+# correctly in A is a leftover in B, and vice versa. If the review were
+# reproducing a remembered answer rather than reading the machine, that
+# inversion is what would expose it.
+# --------------------------------------------------------------------------
+EXTRA_GRANTS_B = [
+    # active staff holding access their role policy forbids
+    ("chen.evans.0005",     "ent:finance:ledger-admin"),
+    ("emi.gray.0007",       "ent:hr:employee-records-write"),
+    ("alex.morgan.0014",    "ent:engineering:source-write"),
+    ("renee.nguyen.0015",   "ent:it:infrastructure-admin"),
+    ("amir.carter.0020",    "ent:hr:payroll-admin"),
+    ("noor.patel.0032",     "ent:finance:payments-approve"),
+    ("remy.reed.0033",      "ent:engineering:production-deploy"),
+    ("lena.patel.0049",     "ent:hr:employee-records-read"),
+    # active staff holding access the policy does not mention at all
+    ("harper.ibrahim.0009", "ent:finance:invoices-read"),
+    ("lena.malik.0013",     "ent:security:audit-read"),
+    ("zuri.bennett.0018",   "ent:marketing:audience-export"),
+    ("ada.brooks.0019",     "ent:sales:pricing-approve"),
+    ("taylor.brooks.0053",  "ent:finance:invoices-manage"),
+    ("sam.bennett.0052",    "ent:security:audit-read"),
+]
+
+LIFECYCLE_LEFTOVERS_B = {
+    "taylor.bennett.0035", # terminated, hr
+    "jules.malik.0047",    # terminated, sales
+    "chen.hayes.0059",     # terminated, marketing
+    "sam.santos.0034",     # on_leave, hr
+    "ira.lane.0046",       # on_leave, sales
+    "sam.brooks.0070",     # on_leave, it
+}
+
+EARLY_PROVISIONED_B = {
+    "zuri.brooks.0036":   ["ent:collaboration:workspace-read",
+                           "ent:knowledge:articles-read"],
+    "kai.nguyen.0048":    ["ent:collaboration:workspace-read",
+                           "ent:knowledge:articles-read"],
+    "dara.ibrahim.0060":  ["ent:collaboration:workspace-read",
+                           "ent:knowledge:articles-read"],
+}
+
+PROPERLY_DEPROVISIONED_B = {
+    "jules.kim.0011", "chen.farah.0023", "taylor.carter.0071",
+    "ira.jordan.0010", "casey.gray.0058", "casey.evans.0022",
+}
+
+SCENARIOS = {
+    "a": {"extra": EXTRA_GRANTS, "leftovers": LIFECYCLE_LEFTOVERS,
+          "early": EARLY_PROVISIONED, "deprovisioned": PROPERLY_DEPROVISIONED},
+    "b": {"extra": EXTRA_GRANTS_B, "leftovers": LIFECYCLE_LEFTOVERS_B,
+          "early": EARLY_PROVISIONED_B, "deprovisioned": PROPERLY_DEPROVISIONED_B},
 }
 
 
@@ -198,8 +263,21 @@ def load_bundle(bundle_dir):
     return identities, policies
 
 
-def plan(identities_doc, policies_doc):
+def plan(identities_doc, policies_doc, scenario="a"):
     """Return (accounts, mapping, catalog, policy_index, status_index)."""
+    if scenario not in SCENARIOS:
+        sys.exit(f"unknown scenario {scenario!r}; choose one of {sorted(SCENARIOS)}")
+    picked = SCENARIOS[scenario]
+    extra_grants = picked["extra"]
+    leftovers = picked["leftovers"]
+    early = picked["early"]
+    deprovisioned = picked["deprovisioned"]
+
+    overlap = leftovers & deprovisioned
+    if overlap:
+        sys.exit(f"scenario {scenario}: {sorted(overlap)} cannot be both a "
+                 f"lifecycle leftover and properly deprovisioned")
+
     catalog = {e["id"]: e for e in policies_doc["entitlements"]}
     mapping = build_mapping(policies_doc["entitlements"])
     policy_index = {(p["department"], p["role"]): p
@@ -214,11 +292,11 @@ def plan(identities_doc, policies_doc):
 
         if status == "active":
             ents, enabled, create = list(expected), True, True
-        elif username in LIFECYCLE_LEFTOVERS:
+        elif username in leftovers:
             ents, enabled, create = list(expected), True, True
-        elif username in EARLY_PROVISIONED:
-            ents, enabled, create = list(EARLY_PROVISIONED[username]), True, True
-        elif username in PROPERLY_DEPROVISIONED:
+        elif username in early:
+            ents, enabled, create = list(early[username]), True, True
+        elif username in deprovisioned:
             ents, enabled, create = [], False, True
         else:
             ents, enabled, create = [], False, False   # pre-hire, never provisioned
@@ -237,11 +315,13 @@ def plan(identities_doc, policies_doc):
         })
 
     by_user = {a["username"]: a for a in accounts}
-    for username, eid in EXTRA_GRANTS:
+    for username, eid in extra_grants:
         if username not in by_user:
-            sys.exit(f"EXTRA_GRANTS references unknown username: {username}")
+            sys.exit(f"scenario {scenario}: extra grant references unknown "
+                     f"username: {username}")
         if eid not in catalog:
-            sys.exit(f"EXTRA_GRANTS references unknown entitlement: {eid}")
+            sys.exit(f"scenario {scenario}: extra grant references unknown "
+                     f"entitlement: {eid}")
         if eid not in by_user[username]["entitlements"]:
             by_user[username]["entitlements"].append(eid)
 
@@ -251,13 +331,19 @@ def plan(identities_doc, policies_doc):
 def classify(account, eid, policy_index, status_index, catalog):
     """Derive the expected policy verdict, using Module 1 rules only.
 
-    Status rule first, then restricted, then expected/privileged, else unlisted.
+    Status rule first, then restricted, then expected/privileged, then
+    privileged-but-unlisted, else unlisted.
     """
     if status_index.get(account["status"], "role_policy") == "none":
         return "lifecycle_restricted", False
     pol = policy_index.get((account["department"], account["role"]))
     if pol is None:
         return "unknown_entitlement", False
+    # Precedence deliberately mirrors Module 4's engine, so a disagreement
+    # between the answer key and the engine is a real disagreement rather than
+    # a taxonomy artefact. An explicit restriction is a NAMED rule and wins
+    # over privilege: `unauthorized_privilege` is reserved for elevated access
+    # the policy does not mention in any of its three lists.
     if eid in pol["restricted"]:
         return "restricted", False
     if eid in pol["expected"]:
@@ -266,7 +352,7 @@ def classify(account, eid, policy_index, status_index, catalog):
         return "permitted_privileged", True
     if eid not in catalog:
         return "unknown_entitlement", False
-    if catalog[eid]['privileged']:
+    if catalog[eid].get("privileged"):
         return "unauthorized_privilege", False
     return "unlisted", False
 
@@ -397,10 +483,12 @@ else:
 # seed
 # ==========================================================================
 
-def seed(bundle_dir):
+def seed(bundle_dir, scenario="a"):
     need_root()
     identities_doc, policies_doc = load_bundle(bundle_dir)
-    accounts, mapping, catalog, policy_index, status_index = plan(identities_doc, policies_doc)
+    accounts, mapping, catalog, policy_index, status_index = plan(
+        identities_doc, policies_doc, scenario)
+    print(f"Scenario        : {scenario}")
 
     print(f"Module 1 bundle : {identities_doc['dataset_id']}")
     print(f"  identities    : {len(identities_doc['identities'])}")
@@ -430,6 +518,12 @@ def seed(bundle_dir):
             run(["usermod", "-s", "/usr/sbin/nologin", a["username"]],
                 check=False, quiet=True)
     print(f"  {made} created, {len(accounts) - made} already present")
+
+    # The manifest is what makes this lab removable, so it is written as soon
+    # as the accounts and groups exist rather than with the other artifacts at
+    # the end. A failure after this point still leaves a lab that `destroy`
+    # can clean up; a failure before it has created nothing to clean up.
+    write_manifest(accounts, groups)
 
     print("Granting entitlements")
     sudo_users = []
@@ -472,7 +566,7 @@ def seed(bundle_dir):
     print("  sudoers validated")
 
     write_artifacts(accounts, mapping, catalog, policy_index, status_index,
-                    identities_doc, policies_doc)
+                    identities_doc, policies_doc, scenario)
     summary()
 
 
@@ -480,8 +574,24 @@ def seed(bundle_dir):
 # artifacts
 # ==========================================================================
 
+def write_manifest(accounts, groups):
+    """Record what was created. destroy() removes exactly this and nothing else."""
+    os.makedirs(LAB_DIR, exist_ok=True)
+    document = {
+        "generated_at": now_iso(),
+        "source": SOURCE,
+        "mapping_version": MAPPING_VERSION,
+        "users": [a["username"] for a in accounts] + [SERVICE_ACCOUNT],
+        "groups": sorted(groups),
+    }
+    path = os.path.join(LAB_DIR, "seed_manifest.json")
+    with open(path, "w") as fh:
+        json.dump(document, fh, indent=2)
+        fh.write("\n")
+
+
 def write_artifacts(accounts, mapping, catalog, policy_index, status_index,
-                    identities_doc, policies_doc):
+                    identities_doc, policies_doc, scenario="a"):
     print("\nWriting hand-off artifacts")
 
     truth, counts = [], {}
@@ -542,6 +652,7 @@ def write_artifacts(accounts, mapping, catalog, policy_index, status_index,
             "schema_version": "1.0.0",
             "generated_at": now_iso(),
             "derived_from": policies_doc["dataset_id"],
+            "scenario": scenario,
             "note": "Derived from Module 1 policy, not hand-written. "
                     "Withhold from the review engine team until measurement.",
             "total_assignments": len(truth),
@@ -658,11 +769,17 @@ def restore_service_key():
     return True
 
 
-def destroy():
+def destroy(required=True):
     need_root()
     mf = os.path.join(LAB_DIR, "seed_manifest.json")
     if not os.path.isfile(mf):
-        sys.exit("Nothing to remove (no seed manifest).")
+        if required:
+            sys.exit("Nothing to remove (no seed manifest).")
+        # Part of a reset: nothing recorded to remove, so go straight to
+        # seeding rather than aborting. Seeding is idempotent, so a lab left
+        # half-built by an earlier failure converges to the requested state.
+        print("No seed manifest found; nothing recorded to remove.")
+        return
     manifest = json.load(open(mf))
     if stash_service_key():
         print("Preserving the connector's authorized SSH key")
@@ -692,11 +809,14 @@ def main():
     ap.add_argument("target", nargs="?", default="./samples")
     ap.add_argument("--bundle", default=".",
                     help="folder containing identities.json and policies.json")
+    ap.add_argument("--scenario", default="a", choices=sorted(SCENARIOS),
+                    help="which set of planted access problems to build "
+                         "(default: a). The answer key is re-derived either way.")
     a = ap.parse_args()
     if a.command == "seed":
-        seed(a.bundle)
+        seed(a.bundle, a.scenario)
     elif a.command == "reset":
-        destroy(); print("-" * 66); seed(a.bundle)
+        destroy(required=False); print("-" * 66); seed(a.bundle, a.scenario)
     elif a.command == "status":
         status()
     elif a.command == "capture":

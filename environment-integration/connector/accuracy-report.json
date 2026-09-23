@@ -1,0 +1,49 @@
+{
+  "campaign_id": "review:45da5294-ed39-4aa2-b4e1-0a5d0e030308",
+  "answer_key": "access-review-demo-2026-09-21",
+  "totals": {
+    "key": 367,
+    "found": 367,
+    "agreed": 362,
+    "disagreed": 5,
+    "missed": 0,
+    "extra": 0
+  },
+  "violations": {
+    "in_key": 48,
+    "caught": 48,
+    "flagged": 48
+  },
+  "disagreements": [
+    {
+      "username": "casey.diaz.0004",
+      "entitlement": "ent:it:infrastructure-admin",
+      "expected": "unauthorized_privilege",
+      "module4": "restricted"
+    },
+    {
+      "username": "finley.kim.0062",
+      "entitlement": "ent:it:infrastructure-admin",
+      "expected": "unauthorized_privilege",
+      "module4": "restricted"
+    },
+    {
+      "username": "ira.kim.0028",
+      "entitlement": "ent:hr:payroll-admin",
+      "expected": "unauthorized_privilege",
+      "module4": "restricted"
+    },
+    {
+      "username": "sam.reed.0016",
+      "entitlement": "ent:finance:payments-approve",
+      "expected": "unauthorized_privilege",
+      "module4": "restricted"
+    },
+    {
+      "username": "zoe.bennett.0003",
+      "entitlement": "ent:engineering:production-deploy",
+      "expected": "unauthorized_privilege",
+      "module4": "restricted"
+    }
+  ]
+}

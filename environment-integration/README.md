@@ -41,15 +41,53 @@ Current dataset (`access-review-demo-2026-09-21`): 67 accounts, 22 POSIX groups,
 | Expected policy result | Count |
 | --- | --- |
 | `lifecycle_restricted` | 34 |
-| `unlisted` | 5 |
 | `restricted` | 9 |
+| `unlisted` | 5 |
+| `unauthorized_privilege` | 0 |
 
-These values are taken from Module 4's `policy_result` vocabulary. The audit
-checks all 367 assignment classifications against Module 4, including 319
-expected assignments. Five explicitly restricted privileged grants were
-previously mislabeled `unauthorized_privilege` in the lab classifier; explicit
-restriction now takes precedence. Existing target-side ground-truth files have
-not been regenerated. This is deterministic policy agreement, not AI accuracy.
+These values are taken from Module 4's `policy_result` vocabulary, so the
+comparison is a direct field match rather than a translation. The audit checks
+all 367 assignment classifications against Module 4, including the 319 expected
+ones. This is deterministic policy agreement, not AI accuracy.
+
+Five explicitly restricted privileged grants were previously mislabeled
+`unauthorized_privilege` by the lab classifier; explicit restriction now takes
+precedence, matching Module 4's engine. Ground-truth files already written to a
+target are not retrospectively regenerated - re-seed to refresh them.
+
+`unauthorized_privilege` is therefore **zero, and cannot be anything else with
+this dataset**. Module 4 reserves that label for elevated access a role policy
+does not mention in any of its three lists, and all twelve of Module 1's role
+policies name all five privileged entitlements explicitly. The branch is
+unreachable here. That is a property of the policy data, not a gap in the lab -
+worth stating, because a reader will otherwise assume the category was missed.
+
+## Two scenarios
+
+`--scenario b` rebuilds the same company with a different set of planted
+problems. The answer key is re-derived from Module 1 policy either way, so
+switching costs nothing to maintain - there is no second truth file to keep in
+step.
+
+```
+sudo python3 lab.py reset --bundle ~/bundle --scenario b
+```
+
+| | A | B |
+| --- | --- | --- |
+| accounts | 67 | 69 |
+| assignments | 367 | 374 |
+| violations | 48 (13%) | 55 (14%) |
+| `lifecycle_restricted` | 34 | 41 |
+| `restricted` | 9 | 8 |
+| `unlisted` | 5 | 6 |
+
+B is not a tweak of A. Different people hold the extra grants, and the
+lifecycle cases are inverted: everyone cleaned up correctly in A is a leftover
+in B, and everyone left behind in A is cleaned up in B. A review that was
+reproducing a remembered answer rather than reading the machine would be
+exposed by that inversion, which is the point of having the second scenario at
+all.
 
 ## The native mapping is the architectural boundary
 

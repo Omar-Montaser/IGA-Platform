@@ -445,6 +445,97 @@ class ReviewService:
         self.store.audit(conn, row['campaign_id'], row['finding_id'], timestamp(self.clock()), 'system', state,
                          {'request_id': row['id'], 'error': error, 'verification': evidence})
 
+    # ------------------------------------------------------------------
+    # Live source view for the reviewer interface.
+    #
+    # Source independent by construction: everything below comes from the
+    # normalized scan, so it reports accounts and generic entitlement IDs and
+    # never a native group name. The core still contains no knowledge of what
+    # kind of system is on the other end of the connector.
+    # ------------------------------------------------------------------
+    def environment(self, actor, *, max_age_seconds=5):
+        """What the configured sources look like right now, plus recent
+        connector activity. Admin only: it is a full read of every source."""
+        self._admin(actor)
+        now = self.clock()
+        cached = getattr(self, '_environment_cache', None)
+        if cached and (now - cached[0]).total_seconds() < max_age_seconds:
+            payload = dict(cached[1], cached=True)
+            payload['activity'] = self._connector_activity()
+            return payload
+
+        sources = []
+        for source, connector in sorted(self.connectors.items()):
+            try:
+                # A request ID is required, not optional: HTTPConnector sends it
+                # as the Idempotency-Key header, and None is not a legal header
+                # value. Namespaced so it can never be mistaken for a
+                # revocation request ID during verification.
+                scan = Scan.model_validate(
+                    connector.scan(source, 'env:' + str(uuid4())))
+            except Exception as exc:
+                # A source that cannot be read is reported as unavailable
+                # rather than omitted; a blank panel would read as "no access
+                # exists here", which is the opposite of the truth.
+                sources.append({'source': source, 'status': 'unavailable',
+                                'error': str(exc)[:300], 'counts': {}, 'accounts': []})
+                continue
+            held, direct, inherited = {}, {}, {}
+            paths = {p.id: p for p in scan.grant_paths}
+            for item in scan.assignments:
+                held.setdefault(item.identity, []).append(item.entitlement)
+                for path_id in item.grant_path_ids:
+                    path = paths.get(path_id)
+                    target = direct if path is not None and path.grant_type == 'direct' else inherited
+                    target[item.identity] = target.get(item.identity, 0) + 1
+            accounts = [{
+                'id': a.id, 'username': a.username, 'enabled': a.enabled,
+                'account_type': a.account_type,
+                'entitlements': sorted(held.get(a.id, [])),
+                'direct': direct.get(a.id, 0), 'inherited': inherited.get(a.id, 0),
+            } for a in sorted(scan.identities, key=lambda a: a.username)]
+            sources.append({
+                'source': source, 'status': 'ok', 'error': None,
+                'scan_id': scan.scan_id, 'scanned_at': scan.scanned_at,
+                'complete': scan.complete, 'mapping_version': scan.mapping_version,
+                'counts': {
+                    'accounts': len(scan.identities),
+                    'enabled': sum(1 for a in scan.identities if a.enabled),
+                    'entitlements': len(scan.entitlements),
+                    'assignments': len(scan.assignments),
+                    'grant_paths': len(scan.grant_paths),
+                    'direct': sum(1 for p in scan.grant_paths if p.grant_type == 'direct'),
+                    'inherited': sum(1 for p in scan.grant_paths if p.grant_type == 'inherited'),
+                    'unassigned_accounts': sum(1 for a in accounts if not a['entitlements']),
+                },
+                'accounts': accounts,
+            })
+
+        payload = {'generated_at': timestamp(now), 'cached': False, 'sources': sources}
+        self._environment_cache = (now, payload)
+        return dict(payload, activity=self._connector_activity())
+
+    def _connector_activity(self, limit=30):
+        """Recent remediation traffic between this core and the connectors."""
+        rows = []
+        with self.store.read() as conn:
+            for row in conn.execute(
+                    'SELECT r.id,r.state,r.last_error,r.payload_json,r.verification_json,'
+                    'f.campaign_id FROM requests r JOIN findings f ON f.id=r.finding_id'):
+                request = json.loads(row['payload_json'])
+                verification = json.loads(row['verification_json']) if row['verification_json'] else None
+                rows.append({
+                    'request_id': row['id'], 'state': row['state'],
+                    'campaign_id': row['campaign_id'], 'error': row['last_error'],
+                    'source': request.get('source'), 'identity': request.get('identity'),
+                    'entitlement': request.get('entitlement'),
+                    'approved_at': request.get('approved_at'),
+                    'verified_scan_id': (verification or {}).get('scan_id'),
+                    'verified_at': (verification or {}).get('scanned_at'),
+                })
+        rows.sort(key=lambda r: r['verified_at'] or r['approved_at'] or '', reverse=True)
+        return rows[:limit]
+
     def audit(self, campaign_id, actor):
         campaign = self.get_campaign(campaign_id, actor)
         visible = {f['id'] for f in campaign['findings']}

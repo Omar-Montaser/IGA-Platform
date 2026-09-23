@@ -716,3 +716,53 @@ textarea {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
+
+/* Source environment ----------------------------------------------------- */
+.env-table-wrap {
+    overflow-x: auto;
+    margin-top: 1rem;
+    border: 1px solid var(--border, #d0d7de);
+    border-radius: 6px;
+}
+
+.env-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+.env-table th,
+.env-table td {
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border, #d0d7de);
+    white-space: nowrap;
+}
+
+.env-table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--surface, #f6f8fa);
+    font-weight: 600;
+}
+
+.env-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* The held-entitlements column is the one field that should wrap rather than
+   push the table sideways. */
+.env-table td.env-ents {
+    white-space: normal;
+    min-width: 22rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8125rem;
+}
+
+#env-freshness {
+    margin: 0 0 0.5rem;
+}
+
+#env-autorefresh {
+    margin-right: 0.35rem;
+}

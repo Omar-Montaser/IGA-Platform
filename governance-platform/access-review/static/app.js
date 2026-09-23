@@ -203,7 +203,9 @@ async function login(token) {
         roleBadge.className = `badge ${user.role}`;
         
         // Show audit nav for admins
-        document.getElementById('audit-nav-btn').hidden = user.role !== 'admin';
+        const isAdmin = user.role === 'admin';
+        document.getElementById('audit-nav-btn').hidden = !isAdmin;
+        document.getElementById('environment-nav-btn').hidden = !isAdmin;
         
         // Load campaigns
         await loadCampaigns();
@@ -220,6 +222,7 @@ async function login(token) {
 
 function logout(message = null) {
     state.sessionVersion += 1;
+    stopEnvironmentPolling();
     state.token = null;
     state.user = null;
     state.campaigns = [];
@@ -260,7 +263,8 @@ function showView(viewId) {
     document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.classList.remove('active');
     });
-    const activeBtn = document.querySelector(`.nav-btn[data-view="${viewId}"]`);
+    const activeBtn = document.querySelector(`.nav-btn[data-view="${viewId}"]`)
+        || document.querySelector(`.nav-btn[data-view="${viewId.replace(/-view$/, '')}"]`);
     if (activeBtn) {
         activeBtn.classList.add('active');
     }
@@ -941,6 +945,125 @@ function renderAudit(data) {
 }
 
 // Initialize
+
+// ---------------------------------------------------------------------------
+// Source environment
+//
+// A live view of what the connector reports right now. Everything rendered
+// here comes from the normalized scan, so it stays source independent: generic
+// entitlement IDs and grant-path kinds, never a native group name.
+// ---------------------------------------------------------------------------
+
+let environmentTimer = null;
+
+function stopEnvironmentPolling() {
+    if (environmentTimer !== null) {
+        clearInterval(environmentTimer);
+        environmentTimer = null;
+    }
+    const toggle = document.getElementById('env-autorefresh');
+    if (toggle) toggle.checked = false;
+}
+
+async function loadEnvironment({ quiet = false } = {}) {
+    if (!quiet) showLoading(true);
+    clearError('environment-error');
+    try {
+        const data = await api.request('/api/environment');
+        state.environment = data;
+        renderEnvironment(data);
+        showView('environment-view');
+    } catch (error) {
+        // A failed poll must not spam the overlay or kill the timer silently.
+        showError('environment-error', error.message || 'Unable to read the source environment.');
+    } finally {
+        if (!quiet) showLoading(false);
+    }
+}
+
+function renderEnvironment(data) {
+    const freshness = document.getElementById('env-freshness');
+    freshness.textContent = `Read at ${formatDate(data.generated_at)}`
+        + (data.cached ? ' (cached for a few seconds to avoid polling the target too hard)' : '');
+
+    const parts = (data.sources || []).map(source => {
+        if (source.status !== 'ok') {
+            return `
+                <div class="campaign-card">
+                    <h3>${escapeHtml(source.source)} <span class="badge failed">unavailable</span></h3>
+                    <p class="help-text">${escapeHtml(source.error || 'The connector did not answer.')}</p>
+                </div>`;
+        }
+        const c = source.counts;
+        const rows = source.accounts.map(account => `
+            <tr>
+                <td>${escapeHtml(account.username)}</td>
+                <td><span class="badge ${account.enabled ? 'certified' : 'failed'}">${account.enabled ? 'enabled' : 'disabled'}</span></td>
+                <td>${escapeHtml(account.account_type)}</td>
+                <td>${account.entitlements.length}</td>
+                <td>${account.direct}</td>
+                <td>${account.inherited}</td>
+                <td class="env-ents">${account.entitlements.map(e => escapeHtml(e)).join(', ') || '<span class="help-text">none</span>'}</td>
+            </tr>`).join('');
+        return `
+            <div class="campaign-card">
+                <h3>${escapeHtml(source.source)} <span class="badge certified">${source.complete ? 'complete' : 'partial'}</span></h3>
+                <div class="campaign-meta">
+                    <span><strong>Scan:</strong> ${escapeHtml(source.scan_id)}</span>
+                    <span><strong>Taken:</strong> ${formatDate(source.scanned_at)}</span>
+                    <span><strong>Mapping:</strong> ${escapeHtml(source.mapping_version)}</span>
+                </div>
+                <div class="summary-cards">
+                    <div class="summary-card"><h4>Accounts</h4><p>${c.accounts}</p></div>
+                    <div class="summary-card"><h4>Enabled</h4><p>${c.enabled}</p></div>
+                    <div class="summary-card"><h4>Entitlements</h4><p>${c.entitlements}</p></div>
+                    <div class="summary-card"><h4>Assignments</h4><p>${c.assignments}</p></div>
+                    <div class="summary-card"><h4>Direct paths</h4><p>${c.direct}</p></div>
+                    <div class="summary-card"><h4>Inherited paths</h4><p>${c.inherited}</p></div>
+                    <div class="summary-card"><h4>No access</h4><p>${c.unassigned_accounts}</p></div>
+                </div>
+                <div class="env-table-wrap">
+                    <table class="env-table">
+                        <thead><tr>
+                            <th>Account</th><th>State</th><th>Type</th>
+                            <th>Entitlements</th><th>Direct</th><th>Inherited</th><th>Held</th>
+                        </tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            </div>`;
+    });
+
+    const activity = (data.activity || []);
+    const activityRows = activity.map(item => `
+        <tr>
+            <td>${formatDate(item.verified_at || item.approved_at)}</td>
+            <td><span class="badge ${escapeHtml(item.state)}">${escapeHtml(item.state)}</span></td>
+            <td>${escapeHtml(item.source || '')}</td>
+            <td>${escapeHtml(item.identity || '')}</td>
+            <td>${escapeHtml(item.entitlement || '')}</td>
+            <td>${item.verified_scan_id ? escapeHtml(item.verified_scan_id) : (item.error ? escapeHtml(item.error) : '<span class="help-text">—</span>')}</td>
+        </tr>`).join('');
+    parts.push(`
+        <div class="campaign-card">
+            <h3>Connector activity</h3>
+            <p class="help-text">Remediation this core has sent to a connector, and the
+               independent scan that confirmed it. An acknowledgement is never treated as proof.</p>
+            ${activity.length ? `
+            <div class="env-table-wrap">
+                <table class="env-table">
+                    <thead><tr>
+                        <th>When</th><th>State</th><th>Source</th>
+                        <th>Account</th><th>Entitlement</th><th>Verified by</th>
+                    </tr></thead>
+                    <tbody>${activityRows}</tbody>
+                </table>
+            </div>` : '<p class="help-text">No remediation has been dispatched yet.</p>'}
+        </div>`);
+
+    document.getElementById('environment-content').innerHTML = parts.join('');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Login form
     document.getElementById('login-form').addEventListener('submit', (e) => {
@@ -960,6 +1083,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const view = btn.dataset.view;
             if (view === 'campaigns') {
                 loadCampaigns();
+            } else if (view === 'environment') {
+                loadEnvironment();
             } else if (view === 'audit') {
                 showView('audit-view');
                 // Populate campaign select
@@ -986,6 +1111,19 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('risk-filter').addEventListener('change', applyFilters);
     document.getElementById('status-filter').addEventListener('change', applyFilters);
     
+    // Environment
+    document.getElementById('refresh-environment-btn').addEventListener('click', () => loadEnvironment());
+    document.getElementById('env-autorefresh').addEventListener('change', (event) => {
+        if (event.target.checked) {
+            // Each tick is a real scan of the target, so the interval is
+            // deliberately unhurried rather than a tight poll.
+            environmentTimer = setInterval(() => loadEnvironment({ quiet: true }), 8000);
+            loadEnvironment({ quiet: true });
+        } else {
+            stopEnvironmentPolling();
+        }
+    });
+
     // Audit
     document.getElementById('load-audit-btn').addEventListener('click', loadAudit);
 });

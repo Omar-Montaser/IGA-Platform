@@ -1,0 +1,28 @@
+{
+  "campaign_id": "review:27104067-3eb4-4913-953d-522a30e9a0a0",
+  "answer_key": "access-review-demo-2026-09-21",
+  "deterministic_engine": {
+    "totals": {
+      "key": 374,
+      "found": 374,
+      "agreed": 374,
+      "disagreed": 0,
+      "missed": 0,
+      "extra": 0
+    },
+    "violations": {
+      "in_key": 55,
+      "caught": 55,
+      "flagged": 55
+    },
+    "disagreements": []
+  },
+  "ai_reviewer": {
+    "status": "all_fallback",
+    "items": 374,
+    "fallback": 374,
+    "reasons": {
+      "ai_fallback": 374
+    }
+  }
+}

@@ -9,6 +9,9 @@ dist/
 .coverage
 .iga-review/
 .demo-review/
+.live-review/
+reviewer-token.txt
+ground_truth.json
 *.sqlite3
 *.sqlite3-shm
 *.sqlite3-wal

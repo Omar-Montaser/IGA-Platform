@@ -43,6 +43,7 @@
 
             <nav class="app-nav" aria-label="Main navigation">
                 <button type="button" class="nav-btn active" data-view="campaigns">Campaigns</button>
+                <button type="button" class="nav-btn" data-view="environment" id="environment-nav-btn" hidden>Environment</button>
                 <button type="button" class="nav-btn" data-view="audit" id="audit-nav-btn" hidden>Audit</button>
             </nav>
 
@@ -104,6 +105,21 @@
                 </div>
                 <div id="finding-content"></div>
                 <div id="finding-error" class="error" role="alert" aria-live="polite"></div>
+            </div>
+
+            <div id="environment-view" class="content-view hidden">
+                <div class="view-header">
+                    <h2>Source Environment</h2>
+                    <div class="actions">
+                        <label for="env-autorefresh">
+                            <input type="checkbox" id="env-autorefresh"> Live
+                        </label>
+                        <button type="button" id="refresh-environment-btn">Refresh</button>
+                    </div>
+                </div>
+                <p class="help-text" id="env-freshness" aria-live="polite"></p>
+                <div id="environment-content" role="region" aria-label="Source environment"></div>
+                <div id="environment-error" class="error" role="alert" aria-live="polite"></div>
             </div>
 
             <div id="audit-view" class="content-view hidden">

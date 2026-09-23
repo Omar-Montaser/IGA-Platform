@@ -94,6 +94,12 @@ def create_app(service):
         return {**user.public(), 'demo': service.demo, 'ai_provider': service.explainer.provider,
                 'ai_model': getattr(service.explainer, 'model', None)}
 
+    @app.get('/api/environment')
+    async def environment(user=Depends(actor)):
+        # Reads every configured source over its connector, so it runs off the
+        # event loop like the other blocking calls in this module.
+        return await run_in_threadpool(service.environment, user)
+
     @app.get('/api/campaigns')
     def campaigns(user=Depends(actor)):
         return service.list_campaigns(user)

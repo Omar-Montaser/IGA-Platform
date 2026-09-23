@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "source": "linux-lab",
-  "generated_at": "2026-09-22T14:42:59Z",
+  "generated_at": "2026-09-23T13:10:13Z",
   "note": "Explicit account-to-HR bindings. Module 4 must not infer these from usernames; two identities share the name 'Alex Morgan' in this dataset.",
   "correlations": [
     {
@@ -61,53 +61,53 @@
     },
     {
       "account_id": "linux-lab:uid:1012",
-      "identity_id": "id:person-0012",
-      "evidence": "POSIX account kai.lane.0012 (uid 1012) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0013",
+      "evidence": "POSIX account lena.malik.0013 (uid 1012) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1013",
-      "identity_id": "id:person-0013",
-      "evidence": "POSIX account lena.malik.0013 (uid 1013) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0014",
+      "evidence": "POSIX account alex.morgan.0014 (uid 1013) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1014",
-      "identity_id": "id:person-0014",
-      "evidence": "POSIX account alex.morgan.0014 (uid 1014) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0015",
+      "evidence": "POSIX account renee.nguyen.0015 (uid 1014) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1015",
-      "identity_id": "id:person-0015",
-      "evidence": "POSIX account renee.nguyen.0015 (uid 1015) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0016",
+      "evidence": "POSIX account sam.reed.0016 (uid 1015) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1016",
-      "identity_id": "id:person-0016",
-      "evidence": "POSIX account sam.reed.0016 (uid 1016) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0017",
+      "evidence": "POSIX account taylor.santos.0017 (uid 1016) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1017",
-      "identity_id": "id:person-0017",
-      "evidence": "POSIX account taylor.santos.0017 (uid 1017) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0018",
+      "evidence": "POSIX account zuri.bennett.0018 (uid 1017) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1018",
-      "identity_id": "id:person-0018",
-      "evidence": "POSIX account zuri.bennett.0018 (uid 1018) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0019",
+      "evidence": "POSIX account ada.brooks.0019 (uid 1018) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1019",
-      "identity_id": "id:person-0019",
-      "evidence": "POSIX account ada.brooks.0019 (uid 1019) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0020",
+      "evidence": "POSIX account amir.carter.0020 (uid 1019) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1020",
-      "identity_id": "id:person-0020",
-      "evidence": "POSIX account amir.carter.0020 (uid 1020) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0021",
+      "evidence": "POSIX account ana.diaz.0021 (uid 1020) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1021",
-      "identity_id": "id:person-0021",
-      "evidence": "POSIX account ana.diaz.0021 (uid 1021) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0022",
+      "evidence": "POSIX account casey.evans.0022 (uid 1021) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1022",
@@ -116,63 +116,63 @@
     },
     {
       "account_id": "linux-lab:uid:1023",
-      "identity_id": "id:person-0024",
-      "evidence": "POSIX account dara.gray.0024 (uid 1023) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0025",
+      "evidence": "POSIX account emi.hayes.0025 (uid 1023) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1024",
-      "identity_id": "id:person-0025",
-      "evidence": "POSIX account emi.hayes.0025 (uid 1024) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0026",
+      "evidence": "POSIX account finley.ibrahim.0026 (uid 1024) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1025",
-      "identity_id": "id:person-0026",
-      "evidence": "POSIX account finley.ibrahim.0026 (uid 1025) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0027",
+      "evidence": "POSIX account harper.jordan.0027 (uid 1025) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1026",
-      "identity_id": "id:person-0027",
-      "evidence": "POSIX account harper.jordan.0027 (uid 1026) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0028",
+      "evidence": "POSIX account ira.kim.0028 (uid 1026) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1027",
-      "identity_id": "id:person-0028",
-      "evidence": "POSIX account ira.kim.0028 (uid 1027) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0029",
+      "evidence": "POSIX account jules.lane.0029 (uid 1027) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1028",
-      "identity_id": "id:person-0029",
-      "evidence": "POSIX account jules.lane.0029 (uid 1028) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0030",
+      "evidence": "POSIX account kai.malik.0030 (uid 1028) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1029",
-      "identity_id": "id:person-0030",
-      "evidence": "POSIX account kai.malik.0030 (uid 1029) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0031",
+      "evidence": "POSIX account lena.nguyen.0031 (uid 1029) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1030",
-      "identity_id": "id:person-0031",
-      "evidence": "POSIX account lena.nguyen.0031 (uid 1030) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0032",
+      "evidence": "POSIX account noor.patel.0032 (uid 1030) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1031",
-      "identity_id": "id:person-0032",
-      "evidence": "POSIX account noor.patel.0032 (uid 1031) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0033",
+      "evidence": "POSIX account remy.reed.0033 (uid 1031) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1032",
-      "identity_id": "id:person-0033",
-      "evidence": "POSIX account remy.reed.0033 (uid 1032) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0034",
+      "evidence": "POSIX account sam.santos.0034 (uid 1032) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1033",
-      "identity_id": "id:person-0034",
-      "evidence": "POSIX account sam.santos.0034 (uid 1033) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0035",
+      "evidence": "POSIX account taylor.bennett.0035 (uid 1033) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1034",
-      "identity_id": "id:person-0035",
-      "evidence": "POSIX account taylor.bennett.0035 (uid 1034) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0036",
+      "evidence": "POSIX account zuri.brooks.0036 (uid 1034) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1035",
@@ -231,113 +231,123 @@
     },
     {
       "account_id": "linux-lab:uid:1046",
-      "identity_id": "id:person-0049",
-      "evidence": "POSIX account lena.patel.0049 (uid 1046) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0048",
+      "evidence": "POSIX account kai.nguyen.0048 (uid 1046) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1047",
-      "identity_id": "id:person-0050",
-      "evidence": "POSIX account noor.reed.0050 (uid 1047) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0049",
+      "evidence": "POSIX account lena.patel.0049 (uid 1047) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1048",
-      "identity_id": "id:person-0051",
-      "evidence": "POSIX account remy.santos.0051 (uid 1048) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0050",
+      "evidence": "POSIX account noor.reed.0050 (uid 1048) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1049",
-      "identity_id": "id:person-0052",
-      "evidence": "POSIX account sam.bennett.0052 (uid 1049) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0051",
+      "evidence": "POSIX account remy.santos.0051 (uid 1049) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1050",
-      "identity_id": "id:person-0053",
-      "evidence": "POSIX account taylor.brooks.0053 (uid 1050) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0052",
+      "evidence": "POSIX account sam.bennett.0052 (uid 1050) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1051",
-      "identity_id": "id:person-0054",
-      "evidence": "POSIX account zuri.carter.0054 (uid 1051) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0053",
+      "evidence": "POSIX account taylor.brooks.0053 (uid 1051) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1052",
-      "identity_id": "id:person-0055",
-      "evidence": "POSIX account ada.diaz.0055 (uid 1052) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0054",
+      "evidence": "POSIX account zuri.carter.0054 (uid 1052) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1053",
-      "identity_id": "id:person-0056",
-      "evidence": "POSIX account amir.evans.0056 (uid 1053) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0055",
+      "evidence": "POSIX account ada.diaz.0055 (uid 1053) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1054",
-      "identity_id": "id:person-0057",
-      "evidence": "POSIX account ana.farah.0057 (uid 1054) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0056",
+      "evidence": "POSIX account amir.evans.0056 (uid 1054) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1055",
-      "identity_id": "id:person-0058",
-      "evidence": "POSIX account casey.gray.0058 (uid 1055) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0057",
+      "evidence": "POSIX account ana.farah.0057 (uid 1055) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1056",
-      "identity_id": "id:person-0059",
-      "evidence": "POSIX account chen.hayes.0059 (uid 1056) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0058",
+      "evidence": "POSIX account casey.gray.0058 (uid 1056) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1057",
-      "identity_id": "id:person-0061",
-      "evidence": "POSIX account emi.jordan.0061 (uid 1057) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0059",
+      "evidence": "POSIX account chen.hayes.0059 (uid 1057) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1058",
-      "identity_id": "id:person-0062",
-      "evidence": "POSIX account finley.kim.0062 (uid 1058) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0060",
+      "evidence": "POSIX account dara.ibrahim.0060 (uid 1058) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1059",
-      "identity_id": "id:person-0063",
-      "evidence": "POSIX account harper.lane.0063 (uid 1059) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0061",
+      "evidence": "POSIX account emi.jordan.0061 (uid 1059) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1060",
-      "identity_id": "id:person-0064",
-      "evidence": "POSIX account ira.malik.0064 (uid 1060) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0062",
+      "evidence": "POSIX account finley.kim.0062 (uid 1060) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1061",
-      "identity_id": "id:person-0065",
-      "evidence": "POSIX account jules.nguyen.0065 (uid 1061) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0063",
+      "evidence": "POSIX account harper.lane.0063 (uid 1061) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1062",
-      "identity_id": "id:person-0066",
-      "evidence": "POSIX account kai.patel.0066 (uid 1062) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0064",
+      "evidence": "POSIX account ira.malik.0064 (uid 1062) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1063",
-      "identity_id": "id:person-0067",
-      "evidence": "POSIX account lena.reed.0067 (uid 1063) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0065",
+      "evidence": "POSIX account jules.nguyen.0065 (uid 1063) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1064",
-      "identity_id": "id:person-0068",
-      "evidence": "POSIX account noor.santos.0068 (uid 1064) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0066",
+      "evidence": "POSIX account kai.patel.0066 (uid 1064) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1065",
-      "identity_id": "id:person-0069",
-      "evidence": "POSIX account remy.bennett.0069 (uid 1065) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0067",
+      "evidence": "POSIX account lena.reed.0067 (uid 1065) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1066",
-      "identity_id": "id:person-0070",
-      "evidence": "POSIX account sam.brooks.0070 (uid 1066) provisioned from this HR identity by the lab seeder"
+      "identity_id": "id:person-0068",
+      "evidence": "POSIX account noor.santos.0068 (uid 1066) provisioned from this HR identity by the lab seeder"
     },
     {
       "account_id": "linux-lab:uid:1067",
+      "identity_id": "id:person-0069",
+      "evidence": "POSIX account remy.bennett.0069 (uid 1067) provisioned from this HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:uid:1068",
+      "identity_id": "id:person-0070",
+      "evidence": "POSIX account sam.brooks.0070 (uid 1068) provisioned from this HR identity by the lab seeder"
+    },
+    {
+      "account_id": "linux-lab:uid:1069",
       "identity_id": "id:person-0071",
-      "evidence": "POSIX account taylor.carter.0071 (uid 1067) provisioned from this HR identity by the lab seeder"
+      "evidence": "POSIX account taylor.carter.0071 (uid 1069) provisioned from this HR identity by the lab seeder"
     }
   ]
 }
