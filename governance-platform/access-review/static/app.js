@@ -965,14 +965,22 @@ function stopEnvironmentPolling() {
     if (toggle) toggle.checked = false;
 }
 
-async function loadEnvironment({ quiet = false } = {}) {
+function environmentVisible() {
+    const view = document.getElementById('environment-view');
+    return view !== null && !view.classList.contains('hidden');
+}
+
+async function loadEnvironment({ quiet = false, navigate = true } = {}) {
     if (!quiet) showLoading(true);
     clearError('environment-error');
     try {
         const data = await api.request('/api/environment');
         state.environment = data;
         renderEnvironment(data);
-        showView('environment-view');
+        // Only a deliberate navigation moves the user. A background refresh
+        // that yanked the view back would make the rest of the interface
+        // unusable while Live is on.
+        if (navigate) showView('environment-view');
     } catch (error) {
         // A failed poll must not spam the overlay or kill the timer silently.
         showError('environment-error', error.message || 'Unable to read the source environment.');
@@ -1117,8 +1125,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (event.target.checked) {
             // Each tick is a real scan of the target, so the interval is
             // deliberately unhurried rather than a tight poll.
-            environmentTimer = setInterval(() => loadEnvironment({ quiet: true }), 8000);
-            loadEnvironment({ quiet: true });
+            environmentTimer = setInterval(() => {
+                // Each tick is a real scan of the target. Skip it entirely when
+                // nobody is looking at the page rather than polling a machine
+                // for a hidden view.
+                if (environmentVisible()) loadEnvironment({ quiet: true, navigate: false });
+            }, 8000);
+            loadEnvironment({ quiet: true, navigate: false });
         } else {
             stopEnvironmentPolling();
         }

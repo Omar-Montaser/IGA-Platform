@@ -218,26 +218,52 @@ check(f"all {len(expected)} seeded assignments discovered",
 check("no assignments invented", len(found - expected) == 0,
       f"extra {sorted(found - expected)[:3]}")
 
-disabled = [a["username"] for a in scan["identities"] if not a["enabled"]]
-check("deprovisioned accounts report enabled=false",
-      "jules.malik.0047" in disabled, f"disabled={sorted(disabled)}")
-check("active accounts report enabled=true",
-      next(a for a in scan["identities"]
-           if a["username"] == "ada.bennett.0001")["enabled"])
+# Nothing below names a specific person. The seeder can build more than one
+# scenario, and each one provisions a different set of accounts, so a test
+# pinned to a username passes on one dataset and fails on another for reasons
+# that have nothing to do with the connector. The invariants are derived from
+# whichever lab is actually in front of us.
+disabled = [a for a in scan["identities"] if not a["enabled"]]
+enabled = [a for a in scan["identities"] if a["enabled"]]
+check("the lab contains both disabled and enabled accounts",
+      bool(disabled) and bool(enabled),
+      f"disabled={len(disabled)} enabled={len(enabled)}")
+
+held = {}
+for item in scan["assignments"]:
+    held.setdefault(item["identity"], set()).add(item["entitlement"])
+still_holding = [a["username"] for a in disabled if held.get(a["id"])]
+check("a disabled account holds no managed access",
+      not still_holding, f"disabled but still granted: {still_holding[:5]}")
+
 check("the service account is typed as a service, not a person",
       all(a["account_type"] == "service"
           for a in scan["identities"] if a["username"] == "iga_svc"))
 
 print("\n--- revocation ---")
-target_ent = "ent:hr:employee-records-read"
-alex = "alex.morgan.0002"
+# Pick a real violation out of the answer key rather than naming one, and
+# prefer a group-backed entitlement so the inherited grant-path machinery is
+# the thing being exercised.
+legitimate = {"expected", "permitted_privileged"}
+sudo_ent = "ent:it:infrastructure-admin"
+candidates = [t for t in GT["assignments"]
+              if t["expected_policy_result"] not in legitimate
+              and t["username"] in by_user
+              and t["entitlement"] != sudo_ent
+              and (by_user[t["username"]], t["entitlement"]) in found]
+if not candidates:
+    sys.exit("no revocable violation found in this lab; cannot exercise revocation")
+chosen = candidates[0]
+victim, target_ent = chosen["username"], chosen["entitlement"]
 target = next(a for a in scan["assignments"]
-              if a["identity"] == by_user[alex] and a["entitlement"] == target_ent)
+              if a["identity"] == by_user[victim] and a["entitlement"] == target_ent)
+print(f"  revoking {target_ent} from {victim} "
+      f"(expected {chosen['expected_policy_result']})")
 
 req = {"request_id": "req-0001", "source": "linux-lab",
-       "identity": by_user[alex], "entitlement": target_ent,
+       "identity": by_user[victim], "entitlement": target_ent,
        "approved_by": "user:admin", "approved_at": scan["scanned_at"],
-       "reason": "Engineering user holding a restricted HR entitlement.",
+       "reason": f"Holds {target_ent} against role policy.",
        "scan_id": scan["scan_id"], "mapping_version": scan["mapping_version"],
        "assignment_ids": [target["id"]],
        "grant_path_ids": list(target["grant_path_ids"])}
@@ -285,7 +311,7 @@ check("verification scan is not older than the request",
       scan2["scanned_at"] >= scan["scanned_at"])
 gone = {(a["identity"], a["entitlement"]) for a in scan2["assignments"]}
 check("the revoked assignment is absent from the fresh scan",
-      (by_user[alex], target_ent) not in gone)
+      (by_user[victim], target_ent) not in gone)
 check("nothing else was removed", len(gone) == len(found) - 1,
       f"before {len(found)} after {len(gone)}")
 check("the grant path that carried it is gone too",
