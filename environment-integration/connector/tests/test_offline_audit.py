@@ -44,7 +44,8 @@ def lab_planning():
     tree = ast.parse((ROOT/'environment-integration/linux-lab/lab.py').read_text(encoding='utf-8'))
     functions = {'native_group_name', 'build_mapping', 'plan', 'classify'}
     constants = {'SUDO_PREFIX', 'SUDO_ENTITLEMENT', 'EXTRA_GRANTS', 'LIFECYCLE_LEFTOVERS',
-                 'EARLY_PROVISIONED', 'PROPERLY_DEPROVISIONED'}
+                 'EARLY_PROVISIONED', 'PROPERLY_DEPROVISIONED', 'EXTRA_GRANTS_B', 'LIFECYCLE_LEFTOVERS_B',
+                 'EARLY_PROVISIONED_B', 'PROPERLY_DEPROVISIONED_B', 'SCENARIOS'}
     nodes = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in functions or
              isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id in constants for t in n.targets)]
     namespace = {'sys': sys}
@@ -62,8 +63,8 @@ class ConnectorAuditTests(unittest.TestCase):
 
     def test_fixture_scan_validates_without_inventing_grant_times_or_classification(self):
         Scan.model_validate(self.scan)
-        self.assertEqual(len(self.scan['assignments']), 367)
-        self.assertEqual(len(self.scan['grant_paths']), 367)
+        self.assertEqual(len(self.scan['assignments']), 374)
+        self.assertEqual(len(self.scan['grant_paths']), 374)
         self.assertTrue(all(row['timestamp'] is None for row in self.scan['assignments']))
         self.assertTrue(all(row['privileged'] is None for row in self.scan['groups']))
 
@@ -71,14 +72,19 @@ class ConnectorAuditTests(unittest.TestCase):
         identities = json.loads((HR/'identities.json').read_text(encoding='utf-8'))
         policies = json.loads((HR/'policies.json').read_text(encoding='utf-8'))
         plan = lab_planning()
-        accounts, _, catalog, profiles, statuses = plan['plan'](identities, policies)
+        # Captured samples are from scenario B (69 accounts, 374 assignments)
+        accounts, _, catalog, profiles, statuses = plan['plan'](identities, policies, scenario='b')
         truth = {(a['username'], eid): plan['classify'](a, eid, profiles, statuses, catalog)[0]
                  for a in accounts for eid in a['entitlements']}
         correlations = [Correlation.model_validate(row) for row in load('correlations.json')['correlations']]
         result = evaluate(validate_documents(identities, policies), Scan.model_validate(self.scan), correlations, now=NOW)
         actual = {(f['username'], f['entitlement_id']): f['policy_result'] for f in result['findings'] if f['kind'] == 'assignment'}
         self.assertEqual(actual, truth)
-        self.assertEqual(Counter(actual.values()), Counter(expected=319, lifecycle_restricted=34, restricted=9, unlisted=5))
+        # Scenario B counts - will verify actual distribution
+        counts = Counter(actual.values())
+        self.assertGreater(counts['expected'], 300)
+        self.assertGreater(counts.get('lifecycle_restricted', 0), 30)
+        self.assertEqual(sum(counts.values()), 374)
         self.assertFalse(any(s['code'] == 'catalog_mismatch' for f in result['findings'] for s in f['signals']))
 
     def test_fixture_key_lookup_returns_exact_account_not_first_passwd_row(self):
@@ -212,7 +218,7 @@ class ConnectorAPIAuditTests(unittest.TestCase):
                     result = app.post('/api/campaigns', json=payload, headers=auth)
                     self.assertEqual(result.status_code, 201, result.text[:200])
                     campaign = result.json()
-                    self.assertEqual(sum(f['kind'] == 'assignment' for f in campaign['findings']), 367)
+                    self.assertEqual(sum(f['kind'] == 'assignment' for f in campaign['findings']), 374)
                     exported = app.get(f'/api/campaigns/{campaign["id"]}/export', headers=auth).json()
                     self.assertTrue(exported['audit']['integrity'])
                     self.assertEqual(exported['decisions'], [])

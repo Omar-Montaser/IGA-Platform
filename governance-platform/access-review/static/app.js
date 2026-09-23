@@ -207,8 +207,9 @@ async function login(token) {
         document.getElementById('audit-nav-btn').hidden = !isAdmin;
         document.getElementById('environment-nav-btn').hidden = !isAdmin;
         
-        // Load campaigns
-        await loadCampaigns();
+        // Administrators begin with configured environments, even with no campaigns.
+        if (isAdmin) await loadEnvironment();
+        else await loadCampaigns();
         
         showLoading(false);
     } catch (error) {
@@ -230,12 +231,19 @@ function logout(message = null) {
     state.currentFinding = null;
     state.allFindings = [];
     state.filteredFindings = [];
+    state.environment = null;
+    environmentRenderKey = null;
+    environmentRequest = null;
+    pendingStarts.clear();
+    campaignNames.clear();
+    environmentActions.clear();
     for (const id of ['campaigns-list', 'campaign-actions', 'campaign-summary', 'campaign-warnings',
                       'findings-list', 'finding-content', 'audit-content', 'audit-campaign-select',
-                      'user-name', 'user-role', 'campaign-name']) {
+                      'user-name', 'user-role', 'campaign-name', 'environment-content', 'environment-error', 'env-freshness']) {
         document.getElementById(id).textContent = '';
     }
     document.getElementById('audit-nav-btn').hidden = true;
+    document.getElementById('environment-nav-btn').hidden = true;
     
     document.getElementById('main-view').classList.add('hidden');
     document.getElementById('login-view').classList.remove('hidden');
@@ -248,6 +256,7 @@ function logout(message = null) {
 
 // Navigation
 function showView(viewId) {
+    if (viewId !== 'environment-view') stopEnvironmentPolling();
     // Hide all content views
     document.querySelectorAll('.content-view').forEach(view => {
         view.classList.add('hidden');
@@ -955,14 +964,18 @@ function renderAudit(data) {
 // ---------------------------------------------------------------------------
 
 let environmentTimer = null;
+let environmentRequest = null;
+let environmentRenderKey = null;
+const pendingStarts = new Map();
+const campaignNames = new Map();
+const environmentActions = new Set();
+const activeRunStates = ['queued', 'scanning', 'validating', 'reviewing'];
 
 function stopEnvironmentPolling() {
     if (environmentTimer !== null) {
         clearInterval(environmentTimer);
         environmentTimer = null;
     }
-    const toggle = document.getElementById('env-autorefresh');
-    if (toggle) toggle.checked = false;
 }
 
 function environmentVisible() {
@@ -971,105 +984,161 @@ function environmentVisible() {
 }
 
 async function loadEnvironment({ quiet = false, navigate = true } = {}) {
-    if (!quiet) showLoading(true);
-    clearError('environment-error');
+    const session = state.sessionVersion;
+    if (environmentRequest === session || state.user?.role !== 'admin') return;
+    environmentRequest = session;
+    if (!quiet) { showLoading(true); clearError('environment-error'); }
     try {
-        const data = await api.request('/api/environment');
+        // Status reads never contact a source or launch a scan.
+        const data = await api.request('/api/environments');
+        if (session !== state.sessionVersion) return;
         state.environment = data;
         renderEnvironment(data);
-        // Only a deliberate navigation moves the user. A background refresh
-        // that yanked the view back would make the rest of the interface
-        // unusable while Live is on.
         if (navigate) showView('environment-view');
+        if (environmentVisible() && environmentTimer === null) {
+            environmentTimer = setInterval(() => {
+                if (environmentVisible()) loadEnvironment({ quiet: true, navigate: false });
+            }, 3000);
+        }
     } catch (error) {
-        // A failed poll must not spam the overlay or kill the timer silently.
-        showError('environment-error', error.message || 'Unable to read the source environment.');
+        if (session === state.sessionVersion) showError('environment-error', error.message || 'Unable to load environments.');
     } finally {
-        if (!quiet) showLoading(false);
+        if (session === state.sessionVersion) {
+            environmentRequest = null;
+            if (!quiet) showLoading(false);
+        }
+    }
+}
+
+async function startEnvironmentReview(source) {
+    const session = state.sessionVersion;
+    if (environmentActions.has(source)) return;
+    let request = pendingStarts.get(source);
+    if (!request) {
+        const name = (campaignNames.get(source) ?? `${source} access review`).trim();
+        if (!name) { showError('environment-error', 'Enter a campaign name.'); return; }
+        request = { name, key: generateIdempotencyKey() };
+        pendingStarts.set(source, request);
+    }
+    environmentActions.add(source);
+    clearError('environment-error');
+    if (state.environment) renderEnvironment(state.environment);
+    try {
+        await api.request(`/api/environments/${encodeURIComponent(source)}/campaign-runs`, {
+            method: 'POST', headers: { 'Idempotency-Key': request.key }, body: JSON.stringify({ name: request.name })
+        });
+        if (session !== state.sessionVersion) return;
+        pendingStarts.delete(source);
+    } catch (error) {
+        if (session !== state.sessionVersion) return;
+        // A network/5xx failure can hide an accepted job: retain its exact key/body.
+        if (error.status && error.status < 500) pendingStarts.delete(source);
+        showError('environment-error', error.message || 'Connection interrupted. Retry submission safely with the same request.');
+    } finally {
+        if (session === state.sessionVersion) {
+            environmentActions.delete(source);
+            if (state.environment) renderEnvironment(state.environment);
+            await loadEnvironment({ quiet: true, navigate: false });
+        }
+    }
+}
+
+async function retryCampaignRun(runId, source) {
+    const session = state.sessionVersion;
+    if (environmentActions.has(source)) return;
+    environmentActions.add(source);
+    clearError('environment-error');
+    if (state.environment) renderEnvironment(state.environment);
+    try {
+        await api.request(`/api/campaign-runs/${encodeURIComponent(runId)}/retry`, { method: 'POST' });
+    } catch (error) {
+        if (session === state.sessionVersion) showError('environment-error', error.message);
+    } finally {
+        if (session === state.sessionVersion) {
+            environmentActions.delete(source);
+            await loadEnvironment({ quiet: true, navigate: false });
+        }
     }
 }
 
 function renderEnvironment(data) {
-    const freshness = document.getElementById('env-freshness');
-    freshness.textContent = `Read at ${formatDate(data.generated_at)}`
-        + (data.cached ? ' (cached for a few seconds to avoid polling the target too hard)' : '');
-
-    const parts = (data.sources || []).map(source => {
-        if (source.status !== 'ok') {
-            return `
-                <div class="campaign-card">
-                    <h3>${escapeHtml(source.source)} <span class="badge failed">unavailable</span></h3>
-                    <p class="help-text">${escapeHtml(source.error || 'The connector did not answer.')}</p>
-                </div>`;
-        }
-        const c = source.counts;
-        const rows = source.accounts.map(account => `
-            <tr>
-                <td>${escapeHtml(account.username)}</td>
-                <td><span class="badge ${account.enabled ? 'certified' : 'failed'}">${account.enabled ? 'enabled' : 'disabled'}</span></td>
-                <td>${escapeHtml(account.account_type)}</td>
-                <td>${account.entitlements.length}</td>
-                <td>${account.direct}</td>
-                <td>${account.inherited}</td>
-                <td class="env-ents">${account.entitlements.map(e => escapeHtml(e)).join(', ') || '<span class="help-text">none</span>'}</td>
-            </tr>`).join('');
-        return `
-            <div class="campaign-card">
-                <h3>${escapeHtml(source.source)} <span class="badge certified">${source.complete ? 'complete' : 'partial'}</span></h3>
-                <div class="campaign-meta">
-                    <span><strong>Scan:</strong> ${escapeHtml(source.scan_id)}</span>
-                    <span><strong>Taken:</strong> ${formatDate(source.scanned_at)}</span>
-                    <span><strong>Mapping:</strong> ${escapeHtml(source.mapping_version)}</span>
-                </div>
+    document.getElementById('env-freshness').textContent =
+        'Inventory is a saved observation. Start access review requests a fresh scan. Status updates do not scan the target.';
+    const container = document.getElementById('environment-content');
+    // Status polls usually change only generated_at. Keep the actual controls
+    // (and keyboard focus) in place when the displayed state is unchanged.
+    const renderKey = JSON.stringify([data.sources, [...pendingStarts], [...environmentActions]]);
+    if (renderKey === environmentRenderKey) return;
+    environmentRenderKey = renderKey;
+    const focused = container.contains(document.activeElement) ? document.activeElement : null;
+    const focusKey = focused?.getAttribute('data-focus-key');
+    const selection = focused?.tagName === 'INPUT' ? [focused.selectionStart, focused.selectionEnd] : null;
+    const expanded = new Set([...container.querySelectorAll('details[data-details-key]')]
+        .filter(details => details.open).map(details => details.dataset.detailsKey));
+    const modes = { simulated: 'Simulated source', captured_fixture: 'Captured fixture · read only', live: 'Live connector (configured)', unknown: 'Transport not specified' };
+    const labels = { queued: 'Queued', scanning: 'Scanning environment', validating: 'Validating evidence', reviewing: 'Reviewing access', completed: 'Review ready', failed: 'Run failed', blocked: 'Review blocked', never_scanned: 'Not scanned yet', last_known: 'Last-known inventory' };
+    container.innerHTML = data.sources.length ? data.sources.map((source, index) => {
+        const run = source.run;
+        const busy = environmentActions.has(source.source) || (run && activeRunStates.includes(run.state));
+        const inv = source.inventory;
+        const name = campaignNames.get(source.source) ?? `${source.source} access review`;
+        const review = source.latest_campaign?.review;
+        const rows = inv?.accounts.map(account => `<tr>
+            <td>${escapeHtml(account.username)}</td><td>${account.enabled ? 'Enabled' : 'Disabled'}</td>
+            <td>${escapeHtml(account.account_type)}</td><td>${account.entitlements.length}</td>
+            <td>${account.direct}</td><td>${account.inherited}</td>
+            <td>${account.entitlements.map(escapeHtml).join(', ') || 'None'}</td></tr>`).join('') || '';
+        return `<article class="campaign-card environment-card" data-source="${escapeHtml(source.source)}">
+            <h3>${escapeHtml(source.name)}</h3>
+            <p class="help-text">${escapeHtml(source.source)} · ${escapeHtml(modes[source.mode] || modes.unknown)}</p>
+            <p role="status">${escapeHtml(labels[source.status] || source.status)}</p>
+            ${inv ? `<p>Observed ${escapeHtml(formatDate(inv.scanned_at))} · ${inv.complete ? 'Complete within declared scope' : 'Partial evidence'}<br>
+                <small>Scan: ${escapeHtml(inv.scan_id)} · Mapping: ${escapeHtml(inv.mapping_version)}</small></p>
                 <div class="summary-cards">
-                    <div class="summary-card"><h4>Accounts</h4><p>${c.accounts}</p></div>
-                    <div class="summary-card"><h4>Enabled</h4><p>${c.enabled}</p></div>
-                    <div class="summary-card"><h4>Entitlements</h4><p>${c.entitlements}</p></div>
-                    <div class="summary-card"><h4>Assignments</h4><p>${c.assignments}</p></div>
-                    <div class="summary-card"><h4>Direct paths</h4><p>${c.direct}</p></div>
-                    <div class="summary-card"><h4>Inherited paths</h4><p>${c.inherited}</p></div>
-                    <div class="summary-card"><h4>No access</h4><p>${c.unassigned_accounts}</p></div>
-                </div>
-                <div class="env-table-wrap">
-                    <table class="env-table">
-                        <thead><tr>
-                            <th>Account</th><th>State</th><th>Type</th>
-                            <th>Entitlements</th><th>Direct</th><th>Inherited</th><th>Held</th>
-                        </tr></thead>
-                        <tbody>${rows}</tbody>
-                    </table>
-                </div>
-            </div>`;
+                <div class="summary-card"><h4>Accounts</h4><p>${inv.counts.accounts}</p></div>
+                <div class="summary-card"><h4>Assignments</h4><p>${inv.counts.assignments}</p></div>
+                <div class="summary-card"><h4>Entitlements</h4><p>${inv.counts.entitlements}</p></div>
+                <div class="summary-card"><h4>Accounts without access</h4><p>${inv.counts.unassigned_accounts}</p></div></div>
+                <details data-details-key="${escapeHtml(source.source)}:inventory"><summary data-focus-key="${escapeHtml(source.source)}:inventory">Inspect observed accounts and access</summary><div class="env-table-wrap"><table class="env-table">
+                <thead><tr><th>Account</th><th>State</th><th>Type</th><th>Entitlements</th><th>Direct</th><th>Inherited</th><th>Held access</th></tr></thead>
+                <tbody>${rows}</tbody></table></div></details>` : '<p>No inventory has been observed. Counts are unknown until a scan completes.</p>'}
+            ${source.setup_error ? `<p class="warning-banner">${escapeHtml(source.setup_error)}</p>` : ''}
+            <form class="start-review-form">
+                <label for="campaign-name-${index}">Campaign name</label>
+                <input id="campaign-name-${index}" data-focus-key="${escapeHtml(source.source)}:name" name="campaignName" value="${escapeHtml(name)}" maxlength="2000" required ${busy || pendingStarts.has(source.source) ? 'disabled' : ''}>
+                <button type="submit" data-focus-key="${escapeHtml(source.source)}:start" ${busy || !source.can_start ? 'disabled' : ''}>${pendingStarts.has(source.source) ? 'Retry submission' : 'Start access review'}</button>
+            </form>
+            ${run ? `<div class="run-progress" aria-live="polite">
+                <p><strong>${escapeHtml(run.name)}:</strong> ${escapeHtml(labels[run.state] || run.state)} · Attempt ${run.attempts} of 3</p>
+                <p class="help-text">Queued → Scanning → Validating → Reviewing → Review ready</p>
+                <details data-details-key="${escapeHtml(source.source)}:progress"><summary data-focus-key="${escapeHtml(source.source)}:progress">Recorded progress</summary><ol>${(run.events || []).map(event => `<li>${escapeHtml(formatDate(event.timestamp))}: ${escapeHtml(labels[event.state] || event.state)}${event.message ? ' — ' + escapeHtml(event.message) : ''}</li>`).join('')}</ol></details>
+                ${run.error ? `<p class="error">${escapeHtml(run.error)}</p>` : ''}
+                ${run.retry_guidance ? `<p>${escapeHtml(run.retry_guidance)}</p>` : ''}
+                ${run.can_retry ? `<button type="button" data-focus-key="${escapeHtml(source.source)}:retry" data-retry="${escapeHtml(run.id)}" ${busy ? 'disabled' : ''}>Retry run</button>` : ''}
+                ${run.campaign_id ? `<button type="button" data-focus-key="${escapeHtml(source.source)}:findings" data-open-campaign="${escapeHtml(run.campaign_id)}">Open review findings</button>` : ''}
+            </div>` : ''}
+            ${source.latest_campaign ? `<p>Latest campaign: <button type="button" class="secondary" data-focus-key="${escapeHtml(source.source)}:latest" data-open-campaign="${escapeHtml(source.latest_campaign.id)}">${escapeHtml(source.latest_campaign.name)}</button></p>` : ''}
+            ${review ? `<p class="help-text">Latest campaign: ${review.cases - review.fallback_cases} AI-reviewed cases; ${review.fallback_cases} rules fallbacks. Human decisions are still required.</p>` : ''}
+        </article>`;
+    }).join('') : '<p>No environments configured. Add a connector and input references to the server configuration, or start an empty simulated demo.</p>';
+    container.querySelectorAll('.environment-card').forEach(card => {
+        const source = card.dataset.source;
+        card.querySelectorAll('details[data-details-key]').forEach(details => {
+            details.open = expanded.has(details.dataset.detailsKey);
+        });
+        card.querySelector('input').addEventListener('input', event => campaignNames.set(source, event.target.value));
+        card.querySelector('form').addEventListener('submit', event => { event.preventDefault(); startEnvironmentReview(source); });
+        card.querySelectorAll('[data-open-campaign]').forEach(button => button.addEventListener('click', () => loadCampaign(button.dataset.openCampaign)));
+        card.querySelectorAll('[data-retry]').forEach(button => button.addEventListener('click', () => retryCampaignRun(button.dataset.retry, source)));
     });
-
-    const activity = (data.activity || []);
-    const activityRows = activity.map(item => `
-        <tr>
-            <td>${formatDate(item.verified_at || item.approved_at)}</td>
-            <td><span class="badge ${escapeHtml(item.state)}">${escapeHtml(item.state)}</span></td>
-            <td>${escapeHtml(item.source || '')}</td>
-            <td>${escapeHtml(item.identity || '')}</td>
-            <td>${escapeHtml(item.entitlement || '')}</td>
-            <td>${item.verified_scan_id ? escapeHtml(item.verified_scan_id) : (item.error ? escapeHtml(item.error) : '<span class="help-text">—</span>')}</td>
-        </tr>`).join('');
-    parts.push(`
-        <div class="campaign-card">
-            <h3>Connector activity</h3>
-            <p class="help-text">Remediation this core has sent to a connector, and the
-               independent scan that confirmed it. An acknowledgement is never treated as proof.</p>
-            ${activity.length ? `
-            <div class="env-table-wrap">
-                <table class="env-table">
-                    <thead><tr>
-                        <th>When</th><th>State</th><th>Source</th>
-                        <th>Account</th><th>Entitlement</th><th>Verified by</th>
-                    </tr></thead>
-                    <tbody>${activityRows}</tbody>
-                </table>
-            </div>` : '<p class="help-text">No remediation has been dispatched yet.</p>'}
-        </div>`);
-
-    document.getElementById('environment-content').innerHTML = parts.join('');
+    if (focusKey) {
+        const replacement = [...container.querySelectorAll('[data-focus-key]')]
+            .find(element => element.getAttribute('data-focus-key') === focusKey);
+        if (replacement && !replacement.disabled) {
+            replacement.focus({ preventScroll: true });
+            if (selection) replacement.setSelectionRange(...selection);
+        }
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1087,7 +1156,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Navigation
     document.querySelectorAll('.nav-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
             const view = btn.dataset.view;
             if (view === 'campaigns') {
                 loadCampaigns();
@@ -1095,6 +1164,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadEnvironment();
             } else if (view === 'audit') {
                 showView('audit-view');
+                try { state.campaigns = (await api.getCampaigns()).campaigns; }
+                catch (error) { showError('audit-error', error.message); return; }
                 // Populate campaign select
                 const select = document.getElementById('audit-campaign-select');
                 select.innerHTML = '<option value="">Select a campaign...</option>' +
@@ -1121,22 +1192,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Environment
     document.getElementById('refresh-environment-btn').addEventListener('click', () => loadEnvironment());
-    document.getElementById('env-autorefresh').addEventListener('change', (event) => {
-        if (event.target.checked) {
-            // Each tick is a real scan of the target, so the interval is
-            // deliberately unhurried rather than a tight poll.
-            environmentTimer = setInterval(() => {
-                // Each tick is a real scan of the target. Skip it entirely when
-                // nobody is looking at the page rather than polling a machine
-                // for a hidden view.
-                if (environmentVisible()) loadEnvironment({ quiet: true, navigate: false });
-            }, 8000);
-            loadEnvironment({ quiet: true, navigate: false });
-        } else {
-            stopEnvironmentPolling();
-        }
-    });
-
     // Audit
     document.getElementById('load-audit-btn').addEventListener('click', loadAudit);
 });

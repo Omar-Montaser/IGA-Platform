@@ -19,6 +19,11 @@ The [governance platform](governance-platform/README.md) owns HR policy inputs,
 access reviews, and the reviewer application. Module 1 publishes context to
 Module 4; Module 3 owns native discovery, mappings and approved target changes.
 
+## Documentation
+
+- **[Setup and Run Guide](docs/SETUP-AND-RUN-GUIDE.md)** - Complete end-to-end setup including Linux VM, connector, and portal
+- **[Feature Comparison & Roadmap](docs/IGA-PLATFORM-COMPARISON-AND-ROADMAP.md)** - Comparison with commercial IGA platforms and future development roadmap
+
 ## Verified audit outcomes — 2026-09-23
 
 | Check executed | Outcome |

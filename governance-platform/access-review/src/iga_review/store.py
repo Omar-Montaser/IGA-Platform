@@ -48,6 +48,36 @@ CREATE TRIGGER IF NOT EXISTS decision_no_delete BEFORE DELETE ON decisions
 CREATE INDEX IF NOT EXISTS findings_campaign ON findings(campaign_id);
 CREATE INDEX IF NOT EXISTS cases_campaign ON review_cases(campaign_id);
 CREATE INDEX IF NOT EXISTS audit_campaign ON audit(campaign_id,seq);
+CREATE TABLE IF NOT EXISTS campaign_runs(
+ id TEXT PRIMARY KEY, source TEXT NOT NULL, name TEXT NOT NULL, actor_id TEXT NOT NULL,
+ idempotency_key TEXT NOT NULL, body_digest TEXT NOT NULL,
+ state TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ inputs_json TEXT NOT NULL, scan_json TEXT, scan_digest TEXT,
+ campaign_id TEXT REFERENCES campaigns(id), attempts INTEGER NOT NULL DEFAULT 0,
+ lease_token TEXT, lease_until TEXT, deadline TEXT, error TEXT, retryable INTEGER NOT NULL DEFAULT 0,
+ UNIQUE(actor_id,idempotency_key));
+CREATE UNIQUE INDEX IF NOT EXISTS runs_active_source ON campaign_runs(source)
+ WHERE state IN ('queued','scanning','validating','reviewing');
+CREATE TABLE IF NOT EXISTS inventory_snapshots(
+ source TEXT NOT NULL, scan_id TEXT NOT NULL, observed_at TEXT NOT NULL,
+ scan_json TEXT NOT NULL, digest TEXT NOT NULL, run_id TEXT NOT NULL REFERENCES campaign_runs(id),
+ PRIMARY KEY(source,scan_id));
+CREATE TABLE IF NOT EXISTS run_events(
+ seq INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL REFERENCES campaign_runs(id),
+ timestamp TEXT NOT NULL, state TEXT NOT NULL, message TEXT);
+CREATE TRIGGER IF NOT EXISTS run_events_no_update BEFORE UPDATE ON run_events
+ BEGIN SELECT RAISE(ABORT,'run events are append only'); END;
+CREATE TRIGGER IF NOT EXISTS run_events_no_delete BEFORE DELETE ON run_events
+ BEGIN SELECT RAISE(ABORT,'run events are append only'); END;
+CREATE TRIGGER IF NOT EXISTS snapshot_no_update BEFORE UPDATE ON inventory_snapshots
+ BEGIN SELECT RAISE(ABORT,'inventory snapshots are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS snapshot_no_delete BEFORE DELETE ON inventory_snapshots
+ BEGIN SELECT RAISE(ABORT,'inventory snapshots are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS run_inputs_immutable BEFORE UPDATE OF inputs_json ON campaign_runs
+ BEGIN SELECT RAISE(ABORT,'run inputs are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS run_scan_immutable BEFORE UPDATE OF scan_json,scan_digest ON campaign_runs
+ WHEN OLD.scan_json IS NOT NULL
+ BEGIN SELECT RAISE(ABORT,'accepted run scans are immutable'); END;
 '''
 
 
@@ -62,7 +92,10 @@ class Store:
             if version == 1:
                 conn.execute('UPDATE meta SET version=2')
                 version = 2
-            if version != 2:
+            if version == 2:
+                conn.execute('UPDATE meta SET version=3')
+                version = 3
+            if version != 3:
                 raise ValueError('Unsupported database schema version')
 
     def connect(self):

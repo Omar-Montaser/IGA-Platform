@@ -10,7 +10,7 @@ from .domain import InputError, Scan, canonical, digest, strict_json, timestamp,
 
 
 class HTTPConnector:
-    def __init__(self, base_url, token, *, client=None):
+    def __init__(self, base_url, token, *, client=None, scan_timeout=120):
         url = urlsplit(base_url)
         if url.username or url.password or url.query or url.fragment or not url.hostname:
             raise ValueError('Connector URL must not contain credentials, queries or fragments')
@@ -19,12 +19,15 @@ class HTTPConnector:
         if not token or any(ord(c) < 33 or ord(c) > 126 for c in token):
             raise ValueError('A valid connector service token is required')
         self.base_url, self.token = base_url.rstrip('/'), token
+        if isinstance(scan_timeout, bool) or not isinstance(scan_timeout, (int, float)) or not 1 <= scan_timeout <= 300:
+            raise ValueError('Scan timeout must be between 1 and 300 seconds')
+        self.scan_timeout = scan_timeout
         self.client = client or httpx.Client(timeout=10, follow_redirects=False, trust_env=False)
 
-    def _post(self, path, payload, request_id):
+    def _post(self, path, payload, request_id, *, timeout=10):
         with self.client.stream('POST', self.base_url + path, json=payload,
                                 headers={'Authorization': 'Bearer ' + self.token, 'Idempotency-Key': request_id},
-                                timeout=10, follow_redirects=False) as response:
+                                timeout=timeout, follow_redirects=False) as response:
             response.raise_for_status()
             parts, size = [], 0
             for part in response.iter_bytes():
@@ -38,7 +41,7 @@ class HTTPConnector:
         return self._post('/revocations', request, request['request_id'])
 
     def scan(self, source, request_id):
-        return self._post('/scans', {'source': source, 'request_id': request_id}, request_id)
+        return self._post('/scans', {'source': source, 'request_id': request_id}, request_id, timeout=self.scan_timeout)
 
 
 class FixtureConnector:

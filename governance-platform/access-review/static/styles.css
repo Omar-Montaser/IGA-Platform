@@ -763,6 +763,33 @@ textarea {
     margin: 0 0 0.5rem;
 }
 
-#env-autorefresh {
-    margin-right: 0.35rem;
+.start-review-form {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin: 1.25rem 0;
+}
+
+.start-review-form input {
+    flex: 1 1 16rem;
+    min-width: 0;
+    padding: 0.65rem;
+    border: 1px solid var(--border, #d0d7de);
+    border-radius: 4px;
+}
+
+.run-progress {
+    padding: 1rem;
+    border-left: 4px solid #3b6db5;
+    background: var(--surface, #f6f8fa);
+}
+
+.environment-card small, .environment-card .help-text {
+    overflow-wrap: anywhere;
+}
+
+.environment-card summary {
+    cursor: pointer;
+    padding: 0.65rem 0;
 }

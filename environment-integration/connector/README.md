@@ -6,6 +6,18 @@ normalizes it into generic objects, and executes approved removals.
 Implements the connector interface defined in
 `governance-platform/access-review/docs/contract.md`, **scan schema v2.0.0**.
 
+Module 4 can now start reviews directly from its Environment view. Configure its
+connector entry with server-managed HR/policy/correlation paths and, for this
+adapter, `correlation_mode: "linux-posix"`. See the
+[environment-first setup](../../SETUP-AND-RUN-GUIDE.md#environment-first-quick-start-windows).
+The backend validates captured username and UID evidence before review. The
+manual `import_campaign.py` path remains compatible. `/scans` creates a fresh
+observation on every request; request IDs correlate responses but do not cache
+scans. Revocation receipt idempotency is a separate mechanism. The review
+client's scan timeout defaults to 120 seconds and is configurable from 1–300
+seconds; revoke requests retain their ten-second timeout. HTTPX timeouts bound
+network operations; the campaign attempt also has a separate overall deadline.
+
 ## Architecture
 
 ```

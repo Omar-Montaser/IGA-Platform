@@ -1,5 +1,6 @@
 """Same-origin authenticated API for the Module 4 review core."""
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 import sqlite3
 from urllib.parse import urlsplit
@@ -15,8 +16,20 @@ from .service import ServiceError
 MAX_BODY = 10 * 1024 * 1024
 
 
-def create_app(service):
-    app = FastAPI(title='IGA Access Review', version='2.0.0', docs_url=None, redoc_url=None, openapi_url=None)
+def create_app(service, *, run_campaign_worker=True):
+    @asynccontextmanager
+    async def lifespan(app):
+        from .runs import CampaignRunWorker
+        worker = CampaignRunWorker(service.runs) if run_campaign_worker else None
+        if worker:
+            worker.start()
+        try:
+            yield
+        finally:
+            if worker:
+                await run_in_threadpool(worker.close)
+
+    app = FastAPI(title='IGA Access Review', version='2.0.0', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     
     # Mount static files for the UI
     static_dir = Path(__file__).parent.parent.parent / 'static'
@@ -104,6 +117,25 @@ def create_app(service):
     @app.get('/api/campaigns')
     def campaigns(user=Depends(actor)):
         return service.list_campaigns(user)
+
+    @app.get('/api/environments')
+    def environments(user=Depends(actor)):
+        return service.runs.environments_view(user)
+
+    @app.post('/api/environments/{source:path}/campaign-runs', status_code=202)
+    async def start_campaign(source: str, request: Request, user=Depends(actor)):
+        service._admin(user)
+        payload, _ = await body(request)
+        return await run_in_threadpool(service.runs.start, source, payload, user,
+                                       request.headers.get('idempotency-key'))
+
+    @app.get('/api/campaign-runs/{run_id}')
+    def campaign_run(run_id: str, user=Depends(actor)):
+        return service.runs.get(run_id, user)
+
+    @app.post('/api/campaign-runs/{run_id}/retry', status_code=202)
+    def retry_campaign_run(run_id: str, user=Depends(actor)):
+        return service.runs.retry(run_id, user)
 
     @app.post('/api/campaigns', status_code=201)
     async def import_campaign(request: Request, user=Depends(actor)):

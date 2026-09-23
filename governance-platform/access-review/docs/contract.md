@@ -122,6 +122,77 @@ approval. Verification evidence and all decisions are audited.
 
 ## HTTP surface
 
+### Environment-first campaign runs
+
+All of these routes require an authenticated administrator. Reviewers retain
+their existing scoped campaign/finding routes.
+
+| Method and route | Behavior |
+| --- | --- |
+| `GET /api/environments` | Configured sources, setup readiness, mode, saved inventory, latest run/events and campaign. Does not call connectors. |
+| `POST /api/environments/{source}/campaign-runs` | Body `{"name":"Quarterly access review"}` and required `Idempotency-Key`; returns the persisted run with HTTP 202. Unknown body fields are rejected. |
+| `GET /api/campaign-runs/{run_id}` | Durable stage, timestamps, attempt count, scan/campaign IDs, sanitized error, `can_retry`, retry guidance, events and completed review provider/fallback counts. |
+| `POST /api/campaign-runs/{run_id}/retry` | Requeues an eligible failed run; returns HTTP 202. Active/completed runs return their current state. Blocked/exhausted runs return 409. |
+
+Source, connector URL/token, input paths, and evidence are resolved from server
+configuration. The same actor/key/name/source returns the original run even
+after completion; changed content with that key returns 409. A SQLite partial
+unique index and transactional source checks prevent simultaneous active starts
+across tabs/processes. Source checks also exclude in-flight remediation and
+unresolved dispatch/verification even after its lease expires. Legacy
+imports cannot supersede a source while a campaign run is active. Starting a
+review never grants or revokes access; queued human-approved remediation remains
+subject to the existing freshness, supersession and exact-target checks.
+
+Stages are `queued`, `scanning`, `validating`, `reviewing`, `completed`, `failed`
+and `blocked`. Append-only run events record failures before any campaign exists;
+these are separate from the campaign hash-chain audit. The UI displays actual
+stages and recorded events, without inferred percentages. A completed campaign
+can contain unresolved ownership findings whose decisions are blocked. A run
+blocked by global evidence quality creates no campaign and supersedes nothing.
+
+The ASGI lifespan of `serve` and `demo` starts the durable campaign runner.
+No additional process is required for campaign generation. The existing `worker`
+and `work` commands still process approved remediation, not campaign runs.
+Each claimed attempt has a fenced 30-second renewable lease, one-second
+heartbeat, 30-minute deadline and a maximum of three claims including recovery.
+Expired leases/deadlines recover automatically; ordinary connector/processing
+failures require explicit retry. Shutdown fences active work for recovery.
+Blocking calls are supervised separately so a stalled call cannot stall the
+runner indefinitely. Python cannot forcibly cancel a call already executing;
+its late result cannot commit after fencing. External AI calls may be repeated
+after crashes, so exactly-once inference is not promised.
+
+Inputs and their SHA-256 digests are pinned when the run is accepted. Each scan
+attempt uses a new request ID: the connector's `/scans` endpoint does not dedupe
+observations by request ID. Source/request identity, schema, declared scope,
+new scan ID, observation time and any configured mapping version are checked.
+Observations must be at or after the scan request and within clock-skew limits.
+Structurally valid correlated observations are stored independently of review
+success, including partial scans that subsequently block review. Inventory
+labels retain completeness; last-known data is not a health assertion. Counts
+come from accounts/assignments in scans, never from findings or HR-person counts.
+Newer legacy-import evidence can also be the last-known inventory.
+
+Review retries reuse accepted evidence and pinned inputs and recheck freshness;
+expired/partial/invalid evidence blocks the run rather than silently replacing
+it. A failure before acceptance requires a fresh observation on retry. Linux
+`linux-posix` correlations require captured username/UID evidence and reject
+disagreement with the scanned account. Missing/ambiguous ownership remains
+visible with blocked decisions. Real-data AI consent is enforced before review.
+Campaign insertion, findings, supersession, audit and run completion commit in
+one transaction, so a lost return after commit recovers the same campaign.
+
+The additive SQLite schema migration to version 3 creates run, event and
+immutable inventory tables without rewriting existing campaigns or audit hashes.
+Public responses omit input documents, filesystem paths, URLs and credentials.
+Existing `POST /api/campaigns` full-payload imports remain supported.
+`GET /api/environment` remains the legacy active-scan endpoint (five-second
+in-memory cache); the new UI polls only `/api/environments` every three seconds,
+without overlapping requests. Leaving the view or signing out stops polling.
+Tokens stay in memory: reload requires sign-in, then server-side discovery
+restores active/completed run status and the campaign link.
+
 The existing campaign, finding, decision, processing, retry, audit, export and
 scan-schema endpoints remain. `POST /api/findings/{id}/explanation` now returns
 the assessment created during campaign import; it does not trigger optional

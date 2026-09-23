@@ -24,7 +24,7 @@ class ServiceError(Exception):
 class ReviewService:
     def __init__(self, db_path, users, *, fallback_reviewer_id=None, connectors=None,
                  explainer=None, config=EngineConfig(), clock=utcnow, demo=False,
-                 allow_external_ai_data=False):
+                 allow_external_ai_data=False, environments=None):
         self.store = Store(db_path)
         self.users = {u.id: u for u in users}
         if len(self.users) != len(users) or not users:
@@ -44,6 +44,8 @@ class ReviewService:
         self.explainer = self.reviewer
         self.config, self.clock, self.demo = config, clock, demo
         self.allow_external_ai_data = allow_external_ai_data
+        from .runs import CampaignRuns
+        self.runs = CampaignRuns(self, environments)
 
     def authenticate(self, token):
         token_hash = hashlib.sha256(token.encode()).hexdigest()
@@ -81,9 +83,12 @@ class ReviewService:
             warnings.append('This campaign was superseded by a newer imported review for this source.')
         return warnings
 
-    def _review_cases(self, cases):
+    def _review_cases(self, cases, run_context=None):
         results = []
         for case in cases:
+            if run_context:
+                with self.store.read() as conn:
+                    self.runs.guard(conn, *run_context)
             try:
                 assessment = self.reviewer.review(case)
             except Exception:
@@ -132,9 +137,13 @@ class ReviewService:
                         (['Reviewer routing is unresolved.'] if row['reviewer_id'] is None else []))
         return item
 
-    def create_campaign(self, payload, actor, *, raw_json=None):
+    def create_campaign(self, payload, actor, *, raw_json=None, run_context=None):
         self._admin(actor)
         inputs = CampaignInput.model_validate(payload)
+        with self.store.read() as conn:
+            self.runs.check_source_free(conn, inputs.scan.source, run_context[0] if run_context else None)
+            if run_context:
+                self.runs.guard(conn, *run_context)
         bundle = validate_documents(inputs.identities, inputs.policies)
         # Enforce consent at ingestion, not merely CLI startup: a demo server
         # can receive arbitrary imports and service callers may bypass the CLI.
@@ -149,11 +158,21 @@ class ReviewService:
         with self.store.read() as conn:
             duplicate = conn.execute('SELECT id FROM campaigns WHERE input_digest=?', (fingerprint,)).fetchone()
         if duplicate:
+            if run_context:
+                with self.store.transaction() as conn:
+                    self.runs.finish(conn, *run_context, duplicate['id'])
             return self.get_campaign(duplicate['id'], actor)
         # Provider calls happen outside the write transaction. Results are
         # validated/fallback-complete before any campaign state is committed.
-        case_results = self._review_cases(result['cases'])
+        case_results = self._review_cases(result['cases'], run_context)
         with self.store.transaction() as conn:
+            self.runs.check_source_free(conn, inputs.scan.source, run_context[0] if run_context else None)
+            if run_context:
+                self.runs.guard(conn, *run_context)
+                # A long review cannot silently commit expired evidence.
+                warnings = evidence_warnings(bundle, inputs.scan, self.clock(), self.config)
+                if warnings:
+                    raise InputError(' '.join(warnings))
             duplicate = conn.execute('SELECT id FROM campaigns WHERE input_digest=?', (fingerprint,)).fetchone()
             if duplicate:
                 campaign_id = duplicate['id']
@@ -210,6 +229,8 @@ class ReviewService:
                                  {'input_digest': fingerprint, 'source': inputs.scan.source,
                                   'cases': len(case_results), 'findings': finding_count,
                                   'warnings': result['warnings']})
+            if run_context:
+                self.runs.finish(conn, *run_context, campaign_id)
         return self.get_campaign(campaign_id, actor)
 
     def get_campaign(self, campaign_id, actor):
@@ -364,6 +385,9 @@ class ReviewService:
             verifying = row['state'] == 'verification_pending'
             campaign = conn.execute('SELECT * FROM campaigns WHERE id=?', (row['campaign_id'],)).fetchone()
             approval = json.loads(row['payload_json'])
+            active_run = conn.execute("SELECT 1 FROM campaign_runs WHERE source=? AND state IN ('queued','scanning','validating','reviewing')", (campaign['source'],)).fetchone()
+            if active_run:
+                return {'request_id': request_id, 'state': row['state'], 'busy': True}
             approver = self.users.get(approval['approved_by'])
             finding_row = conn.execute('SELECT * FROM findings WHERE id=?', (row['finding_id'],)).fetchone()
             finding_payload = json.loads(finding_row['payload_json'])

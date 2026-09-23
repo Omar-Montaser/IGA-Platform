@@ -12,6 +12,11 @@ and fresh scans.
 
 ## Implemented
 
+- Administrator Environment landing page before any campaign exists, with
+  server-managed setup, saved inventory, start/progress/retry, and reload recovery.
+- Durable SQLite campaign runs with fenced leases, pinned inputs/snapshots,
+  bounded recovery and atomic campaign completion/supersession.
+
 - Strict normalized scan v2 contract covering applications, accounts,
   business/application roles, groups, entitlements, assignments, direct and
   inherited grant paths, approved exceptions, and access history.
@@ -69,6 +74,20 @@ The command prints the path to a generated reviewer token and starts the core
 API at `http://127.0.0.1:8040`. The reviewer UI is available at the root URL.
 Open a web browser and navigate to `http://127.0.0.1:8040`, then paste the
 token from `.demo-review/reviewer-token.txt` to sign in.
+
+To begin with **no campaigns**, use `iga-review demo --empty --state-dir
+.demo-review/environment-first` with a new directory. `--empty` only affects
+first initialization; subsequent starts preserve campaigns and simulated
+removals. Administrators land on Environment, choose a name, click **Start access
+review**, inspect **Recorded progress**, then **Open review findings**. Refresh
+status never scans the target. Reload requires signing in again; the saved run
+and campaign return. Reviewers land on their authorized campaigns.
+
+For exact Windows commands and server input configuration, see the
+[environment-first quick start](../../SETUP-AND-RUN-GUIDE.md#environment-first-quick-start-windows).
+Synthetic demo HR dates are rebased only in a pinned copy for each new run; real
+input files and historical evidence are never refreshed automatically. New demo
+JSON is UTF-8; old Windows cp1252 demo-import files remain readable.
 
 Use the HTTP contract in [contract.md](docs/contract.md) for API integration.
 The generated `.demo-review` state contains credentials and is ignored by Git.
@@ -157,8 +176,9 @@ it does not prove the assessment is correct. Humans retain decision authority.
 
 ## API flow
 
-1. An administrator imports one JSON object containing validated Module 1
-   documents, a normalized scan, and explicit account-to-HR correlations.
+1. An administrator starts a campaign run for a configured environment. The
+   backend pins HR/policy/correlation inputs and requests fresh connector evidence.
+   Full-payload JSON import remains available for integrations.
 2. The engine records immutable input digests, policy facts, and safety
    constraints, then the configured reviewer analyzes each person-level case.
 3. An assigned human reviewer records `certify`, `revoke`, or `acknowledge` with a
@@ -175,14 +195,27 @@ in [contract.md](docs/contract.md). Design research is in
 
 ## Verified outcomes — 2026-09-23
 
-- 133 Module 4 tests passed; provider calls are mocked.
-- All 67 Module 1 tests passed, including generated-fixture reproducibility.
+- 163 Module 4 tests passed; provider calls are mocked or rules-only. This
+  includes 28 campaign-run tests for idempotency, lease recovery, stalled-call
+  shutdown/deadlines, atomic rollback/completion, freshness, immutable evidence,
+  prior simulated removals, source-busy checks, authorization and consent.
+- Prior Module 1 audit: all 67 tests passed, including fixture reproducibility;
+  that suite was not rerun for the environment-first follow-up.
 - 14 offline connector tests passed, including real localhost HTTP and
   authenticated campaign import/export with all 367 captured assignments.
-- 3 JavaScript runtime tests passed using a DOM stub, not a real browser.
-  JavaScript and PowerShell setup-script syntax checks passed.
-- Live `ai-check`: **not configured**, nonzero exit and explicit rules fallback.
-  No live model review or AI accuracy score is claimed.
+- The separate captured-connector campaign-start test passed over real loopback
+  HTTP: Module 4 → Module 3 fixture discovery/normalization → persisted campaign.
+- 8 JavaScript runtime tests passed (DOM stub): submission idempotency, concurrent
+  click suppression, polling, session cleanup, recovery, retry and escaping.
+  JavaScript syntax checking passed.
+- Browser: restarted empty synthetic demo, administrator sign-in, Environment
+  before campaigns, stable input focus through polling, Start, recorded stages,
+  campaign/finding access and completed-run recovery after reload/sign-in passed.
+  A temporary delayed fixture/rules harness also verified reload during scanning
+  and recovery while reviewing; this delay is not part of the shipped demo.
+- No live Linux connection, native access change, paid call, external model review
+  or AI accuracy evaluation was performed. Earlier `ai-check` reported not
+  configured; it was not rerun here.
 
 The service now enforces ownership blockers and hard-policy actions. Mandatory
 review requires risk acknowledgement even when AI recommends retain. Each AI
@@ -203,9 +236,8 @@ See the [root README](../../README.md) for reproducible commands and scope.
   deployment manifests, metrics, rate limiting, and operational alerting.
 - Live model evaluation using an authorized project key and labeled review cases
   (mocked integration tests are not a quality or live-availability evaluation).
-- Comprehensive browser-based UI testing (current tests verify HTML structure,
-  accessibility attributes, JavaScript security patterns, and API integration
-  without requiring a browser runtime).
+- Comprehensive cross-browser/accessibility testing beyond the verified local
+  environment-first browser walkthrough. Runtime tests still use a DOM stub.
 
 These items must not be represented as completed by simulated connectors or
 mocked tests. Editable installation is the tested UI deployment; packaged-wheel

@@ -16,6 +16,7 @@ from .domain import User, strict_json, utcnow
 from .ai import configured_reviewer, check_connection
 from .service import ReviewService
 from .worker import WorkerConfig, run_worker
+from .source_inputs import SourceInputs
 
 
 def initialize(directory, demo=False):
@@ -36,25 +37,37 @@ def initialize(directory, demo=False):
 
 
 def load_service(directory):
-    config = strict_json((directory / 'config.json').read_text())
+    config = strict_json((directory / 'config.json').read_text(encoding='utf-8-sig'))
     if config.get('version') != 1:
         raise ValueError('Unsupported configuration version')
     users = [User(**u) for u in config['users']]
     connectors = {}
+    environments = {}
     if config['demo']:
         connectors['prototype-system'] = FixtureConnector(directory / 'simulated-source.sqlite3')
+        environments['prototype-system'] = {'name': 'Simulated demo environment', 'mode': 'simulated',
+                                              'load_inputs': SourceInputs(directory, demo=True)}
     else:
         for item in config.get('connectors', []):
             if item['source'] in connectors:
                 raise ValueError('Duplicate connector source')
-            connectors[item['source']] = HTTPConnector(item['base_url'], os.environ.get(item['token_env'], ''))
+            connectors[item['source']] = HTTPConnector(item['base_url'], os.environ.get(item['token_env'], ''),
+                                                       scan_timeout=item.get('scan_timeout_seconds', 120))
+            mode = item.get('mode', 'unknown')
+            if mode not in ('unknown', 'live', 'captured_fixture'):
+                raise ValueError('Connector mode must be unknown, live or captured_fixture')
+            if item.get('correlation_mode') not in (None, 'linux-posix'):
+                raise ValueError('Unsupported correlation evidence mode')
+            environments[item['source']] = {key: item[key] for key in ('name', 'mapping_version', 'correlation_mode') if key in item}
+            environments[item['source']].update(mode=mode,
+                load_inputs=SourceInputs(directory, item['inputs']) if item.get('inputs') else None)
     explainer = configured_reviewer()
     if not config['demo'] and explainer.provider != 'rules' and os.environ.get('IGA_AI_ALLOW_REAL_DATA') != '1':
         raise ValueError('External AI sends identity evidence to the provider. Obtain data-owner approval, '
                          'then explicitly set IGA_AI_ALLOW_REAL_DATA=1, or use IGA_AI_PROVIDER=rules.')
     return ReviewService(directory / 'reviews.sqlite3', users, fallback_reviewer_id=config['fallback_reviewer_id'],
                          connectors=connectors, explainer=explainer, demo=config['demo'],
-                         allow_external_ai_data=os.environ.get('IGA_AI_ALLOW_REAL_DATA') == '1')
+                         allow_external_ai_data=os.environ.get('IGA_AI_ALLOW_REAL_DATA') == '1', environments=environments)
 
 
 def main(argv=None):
@@ -68,6 +81,7 @@ def main(argv=None):
             cmd.add_argument('--host', choices=['127.0.0.1', '::1'], default='127.0.0.1')
             cmd.add_argument('--port', type=int, default=8040)
         if command == 'demo':
+            cmd.add_argument('--empty', action='store_true', help='On first initialization, show the environment without creating a campaign')
             cmd.add_argument('--identities', type=Path, default=Path('../hr-policy/data/identities.json'))
             cmd.add_argument('--policies', type=Path, default=Path('../hr-policy/data/policies.json'))
         if command == 'worker':
@@ -101,12 +115,13 @@ def main(argv=None):
         if args.command == 'demo' and not (directory / 'config.json').exists():
             configured_reviewer()  # Fail bad AI configuration before creating state.
             # Validate all input and generate the fixture before creating credentials.
-            payload = build_demo(strict_json(args.identities.read_text()), strict_json(args.policies.read_text()), utcnow())
+            payload = build_demo(strict_json(args.identities.read_text(encoding='utf-8')), strict_json(args.policies.read_text(encoding='utf-8')), utcnow())
             initialize(directory, demo=True)
             FixtureConnector(directory / 'simulated-source.sqlite3', payload['scan'])
-            (directory / 'demo-import.json').write_text(json.dumps(payload, indent=2, ensure_ascii=False) + '\n')
+            (directory / 'demo-import.json').write_text(json.dumps(payload, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
             service = load_service(directory)
-            service.create_campaign(payload, service.users['reviewer:admin'])
+            if not args.empty:
+                service.create_campaign(payload, service.users['reviewer:admin'])
         else:
             service = load_service(directory)
         if args.command == 'demo' and not service.demo:
