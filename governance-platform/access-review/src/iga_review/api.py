@@ -1,8 +1,9 @@
 """Same-origin authenticated API for the Module 4 review core."""
+import logging
 from pathlib import Path
 import sqlite3
 from urllib.parse import urlsplit
-from fastapi import Depends, FastAPI, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
@@ -118,10 +119,36 @@ def create_app(service):
     def finding(finding_id: str, user=Depends(actor)):
         return service.get_finding(finding_id, user)
 
+    def _dispatch_now(request_id):
+        """Send an approved revocation to its connector immediately.
+
+        The durable queue is still the guarantee: the request row is committed
+        before this runs, `_work` takes a lease so a running worker cannot
+        duplicate it, and the connector is idempotent on request_id. If this
+        fails for any reason the row simply stays queued for the worker or an
+        explicit retry, which is why the exception is logged and swallowed
+        rather than surfaced to the reviewer who already got their answer.
+        """
+        try:
+            service._work(request_id)
+        except Exception:
+            logging.getLogger('iga_review.api').exception(
+                'immediate dispatch failed for %s; it remains queued', request_id)
+
     @app.post('/api/findings/{finding_id}/decisions')
-    async def decide(finding_id: str, request: Request, user=Depends(actor)):
+    async def decide(finding_id: str, request: Request, background: BackgroundTasks,
+                     user=Depends(actor)):
         payload, _ = await body(request)
-        return service.decide(finding_id, user, payload, request.headers.get('idempotency-key'))
+        # Decisions touch SQLite and must not block the event loop, or the live
+        # environment view stalls while a reviewer is deciding.
+        result = await run_in_threadpool(
+            service.decide, finding_id, user, payload,
+            request.headers.get('idempotency-key'))
+        # An approved revocation goes to the target as soon as the response is
+        # sent, instead of waiting for the next worker poll.
+        if result.get('request_id'):
+            background.add_task(_dispatch_now, result['request_id'])
+        return result
 
     @app.post('/api/findings/{finding_id}/explanation')
     def explanation(finding_id: str, user=Depends(actor)):
