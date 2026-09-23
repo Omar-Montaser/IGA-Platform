@@ -243,6 +243,16 @@ class UIBehaviorTests(unittest.TestCase):
         
         # Should have at least as many labels as inputs
         self.assertGreaterEqual(label_count, input_count - 3)  # Allow some radio/checkbox groups
+
+    def test_red_white_grey_review_workspace_structure_is_present(self):
+        html = (Path(__file__).parent.parent / 'static' / 'index.html').read_text(encoding='utf-8')
+        css = (Path(__file__).parent.parent / 'static' / 'styles.css').read_text(encoding='utf-8')
+        js = (Path(__file__).parent.parent / 'static' / 'app.js').read_text(encoding='utf-8')
+        for marker in ('review-workspace', 'review-queue', 'review-panel', 'finding-search', 'finding-sort', 'review-journey', 'toast'):
+            self.assertIn(marker, html)
+        self.assertIn('--color-primary:#ba2025', css)
+        for marker in ('applyFilters', 'saveDecisionDraft', 'previous-finding', 'panel-evidence', 'detail-tabs', 'run-stage-rail', 'journeyStages', 'RULES FALLBACK'):
+            self.assertIn(marker, js)
     
     def test_javascript_handles_401_by_logging_out(self):
         """JavaScript should handle 401 responses by logging out."""

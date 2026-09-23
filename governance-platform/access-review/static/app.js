@@ -12,8 +12,27 @@ const state = {
     currentCampaign: null,
     currentFinding: null,
     allFindings: [],
-    filteredFindings: []
+    filteredFindings: [],
+    findingRequest: 0
 };
+
+const decisionDrafts = new Map();
+const decisionRequests = new Map();
+let toastTimer = null;
+
+function notify(message) {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.classList.remove('hidden');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.add('hidden'), 4500);
+}
+
+function initials(name) {
+    return String(name || '?').split(/[ ._-]+/).filter(Boolean).slice(0, 2).map(word => word[0]).join('').toUpperCase();
+}
+
+function friendly(value) { return String(value || 'Unknown').replace(/_/g, ' '); }
 
 // API client
 const api = {
@@ -223,6 +242,10 @@ async function login(token) {
 
 function logout(message = null) {
     state.sessionVersion += 1;
+    state.findingRequest += 1;
+    decisionDrafts.clear();
+    decisionRequests.clear();
+    document.getElementById('toast').classList.add('hidden');
     stopEnvironmentPolling();
     state.token = null;
     state.user = null;
@@ -239,7 +262,7 @@ function logout(message = null) {
     environmentActions.clear();
     for (const id of ['campaigns-list', 'campaign-actions', 'campaign-summary', 'campaign-warnings',
                       'findings-list', 'finding-content', 'audit-content', 'audit-campaign-select',
-                      'user-name', 'user-role', 'campaign-name', 'environment-content', 'environment-error', 'env-freshness']) {
+                      'user-name', 'user-role', 'campaign-name', 'portfolio-summary', 'campaign-context', 'queue-count', 'environment-content', 'environment-error', 'env-freshness']) {
         document.getElementById(id).textContent = '';
     }
     document.getElementById('audit-nav-btn').hidden = true;
@@ -256,6 +279,8 @@ function logout(message = null) {
 
 // Navigation
 function showView(viewId) {
+    const location = { 'campaigns-view': 'Access reviews', 'campaign-detail-view': 'Review workspace', 'environment-view': 'Environment', 'audit-view': 'Audit trail' };
+    document.getElementById('page-location').textContent = location[viewId] || 'Access reviews';
     if (viewId !== 'environment-view') stopEnvironmentPolling();
     // Hide all content views
     document.querySelectorAll('.content-view').forEach(view => {
@@ -273,7 +298,7 @@ function showView(viewId) {
         btn.classList.remove('active');
     });
     const activeBtn = document.querySelector(`.nav-btn[data-view="${viewId}"]`)
-        || document.querySelector(`.nav-btn[data-view="${viewId.replace(/-view$/, '')}"]`);
+        || document.querySelector(`.nav-btn[data-view="${(viewId === 'campaign-detail-view' ? 'campaigns' : viewId.replace(/-view$/, ''))}"]`);
     if (activeBtn) {
         activeBtn.classList.add('active');
     }
@@ -299,47 +324,26 @@ async function loadCampaigns() {
 
 function renderCampaigns() {
     const container = document.getElementById('campaigns-list');
-    
-    if (state.campaigns.length === 0) {
-        container.innerHTML = '<p>No campaigns found.</p>';
-        return;
-    }
-    
-    const html = state.campaigns.map(campaign => `
-        <div class="campaign-card" data-campaign-id="${escapeHtml(campaign.id)}" 
-             role="article" tabindex="0" aria-label="Campaign: ${escapeHtml(campaign.name)}">
-            <h3>${escapeHtml(campaign.name)}</h3>
-            <div class="campaign-meta">
-                <span><strong>Source:</strong> ${escapeHtml(campaign.source)}</span>
-                <span><strong>Created:</strong> ${formatDate(campaign.created_at)}</span>
-                <span><strong>Total Findings:</strong> ${campaign.summary.total}</span>
-                <span><strong>Pending:</strong> ${campaign.summary.pending}</span>
-                <span><strong>Critical:</strong> <span class="badge critical">${campaign.summary.critical}</span></span>
-                <span><strong>High:</strong> <span class="badge high">${campaign.summary.high}</span></span>
-                ${campaign.metadata?.review ? `<span><strong>AI-reviewed cases:</strong> ${campaign.metadata.review.cases - campaign.metadata.review.fallback_cases} / ${campaign.metadata.review.cases}</span>
-                <span><strong>Non-AI fallbacks:</strong> ${campaign.metadata.review.fallback_cases}</span>` : ''}
-            </div>
-            ${campaign.warnings.length > 0 ? `
-                <div style="margin-top: 1rem; color: var(--color-warning);">
-                    ⚠ ${campaign.warnings.length} warning(s)
-                </div>
-            ` : ''}
-        </div>
-    `).join('');
-    
-    container.innerHTML = html;
-    
-    // Add click handlers
-    container.querySelectorAll('.campaign-card').forEach(card => {
-        const clickHandler = () => {
-            const campaignId = card.dataset.campaignId;
-            loadCampaign(campaignId);
-        };
-        card.addEventListener('click', clickHandler);
-        card.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') clickHandler();
-        });
-    });
+    const totals = state.campaigns.reduce((result, c) => ({ total: result.total + c.summary.total, pending: result.pending + c.summary.pending, critical: result.critical + c.summary.critical }), { total: 0, pending: 0, critical: 0 });
+    document.getElementById('portfolio-summary').innerHTML = [
+        ['Active campaigns', state.campaigns.filter(c => !c.superseded_by).length, 'Current reviews'],
+        ['Awaiting review', totals.pending, 'Across visible campaigns'],
+        ['Critical findings', totals.critical, 'Prioritize these reviews'],
+        ['Total findings', totals.total, 'Including campaign history']
+    ].map(([label, value, note]) => `<div class="summary-card"><div class="label">${label}</div><div class="value">${value}</div><small>${note}</small></div>`).join('');
+    container.innerHTML = state.campaigns.length ? state.campaigns.map(campaign => {
+        const completed = campaign.summary.total - campaign.summary.pending;
+        const review = campaign.metadata?.review;
+        return `<button type="button" class="campaign-card campaign-tile" data-campaign-id="${escapeHtml(campaign.id)}">
+            <div class="tile-top"><span class="tile-icon" aria-hidden="true">[ ]</span><span class="badge ${campaign.superseded_by ? 'neutral' : 'pending'}">${campaign.superseded_by ? 'Superseded' : campaign.summary.pending ? 'In review' : 'Decisions recorded'}</span></div>
+            <h3>${escapeHtml(campaign.name)}</h3><p class="help-text">${escapeHtml(campaign.source)} · ${escapeHtml(formatDate(campaign.created_at))}</p>
+            <div class="campaign-counts"><span><strong>${campaign.summary.total}</strong> findings</span><span><strong>${campaign.summary.pending}</strong> pending</span><span class="risk-text"><strong>${campaign.summary.critical + campaign.summary.high}</strong> high / critical</span></div>
+            <div class="progress-label"><span>Decisions recorded</span><strong>${completed} / ${campaign.summary.total}</strong></div>
+            <progress value="${completed}" max="${campaign.summary.total || 1}" aria-label="Decisions recorded"></progress>
+            <div class="tile-footer"><span>${review ? `${review.fallback_cases} rules fallbacks` : 'Evidence available'}${campaign.warnings.length ? ` · ${campaign.warnings.length} warnings` : ''}</span><strong>Open review <span aria-hidden="true">-&gt;</span></strong></div>
+        </button>`;
+    }).join('') : '<div class="empty-state"><span class="empty-symbol" aria-hidden="true">[ ]</span><h3>Your next review starts here</h3><p>No campaigns are available. Administrators can start an access review from Environment.</p></div>';
+    container.querySelectorAll('[data-campaign-id]').forEach(card => card.addEventListener('click', () => loadCampaign(card.dataset.campaignId)));
 }
 
 // Campaign detail
@@ -350,6 +354,10 @@ async function loadCampaign(campaignId) {
         
         const campaign = await api.getCampaign(campaignId);
         state.currentCampaign = campaign;
+        state.currentFinding = null;
+        state.findingRequest += 1;
+        for (const id of ['finding-search', 'risk-filter', 'status-filter']) document.getElementById(id).value = '';
+        document.getElementById('finding-content').innerHTML = '<div class="empty-state"><span class="empty-symbol" aria-hidden="true">( )</span><h3>Select an access finding</h3><p>Explore its evidence, assess the risk, and make an informed decision.</p></div>';
         state.allFindings = campaign.findings;
         state.filteredFindings = campaign.findings;
         
@@ -367,6 +375,8 @@ function renderCampaignDetail() {
     
     // Header
     document.getElementById('campaign-name').textContent = campaign.name;
+    const review = campaign.metadata?.review;
+    document.getElementById('campaign-context').textContent = `${campaign.source} · ${review ? `${review.cases - review.fallback_cases} AI-reviewed cases · ${review.fallback_cases} rules fallbacks` : 'Evidence-backed review'}`;
     
     // Warnings
     const warningsEl = document.getElementById('campaign-warnings');
@@ -395,7 +405,7 @@ function renderCampaignDetail() {
                 showLoading();
                 await api.processCampaign(campaign.id);
                 showLoading(false);
-                alert('Remediation processing started. Refresh to see updates.');
+                notify('Remediation processed. Updated verification status is available.');
                 await loadCampaign(campaign.id);
             } catch (error) {
                 showLoading(false);
@@ -447,295 +457,131 @@ function renderCampaignDetail() {
             <div class="label">Verified</div>
         </div>
     `;
+    const total = campaign.summary.total || 0;
+    const pending = campaign.summary.pending || 0;
+    const verified = campaign.summary.verified || 0;
+    const completed = Math.max(0, total - pending);
+    const journey = pending ? 1 : verified ? 3 : 2;
+    const journeyStages = [
+        ['evidence', 'Evidence captured', 'Fresh source snapshot'],
+        ['review', 'Findings ready', `${total} access findings`],
+        ['decisions', 'Human decisions', pending ? `${pending} still pending` : `${completed} decisions recorded`],
+        ['verify', 'Verified outcome', verified ? `${verified} removals verified` : 'Follows approved changes']
+    ];
+    document.getElementById('review-journey').innerHTML = `<div class="journey-heading"><div><p class="eyebrow">REVIEW JOURNEY</p><h3>${pending ? 'Work through the queue' : verified ? 'Review complete with verified outcomes' : 'Ready for human decisions'}</h3></div><span class="journey-progress">${completed} / ${total} decisions</span></div><div class="journey-rail">${journeyStages.map(([key, label, detail], index) => { const state = index < journey ? 'complete' : index === journey ? 'current' : 'pending'; return `<div class="journey-stage ${state}"><span class="journey-marker">${state === 'complete' ? '✓' : index + 1}</span><div><strong>${label}</strong><small>${detail}</small></div></div>${index < journeyStages.length - 1 ? '<span class="journey-connector" aria-hidden="true"></span>' : ''}`; }).join('')}</div>`;
     
     // Findings
     applyFilters();
 }
 
 function applyFilters() {
-    const riskFilter = document.getElementById('risk-filter').value;
-    const statusFilter = document.getElementById('status-filter').value;
-    
-    state.filteredFindings = state.allFindings.filter(finding => {
-        if (riskFilter && finding.risk_level !== riskFilter) return false;
-        if (statusFilter && finding.status !== statusFilter) return false;
-        return true;
-    });
-    
+    const risk = document.getElementById('risk-filter').value;
+    const status = document.getElementById('status-filter').value;
+    const query = document.getElementById('finding-search').value.trim().toLowerCase();
+    const sort = document.getElementById('finding-sort').value;
+    state.filteredFindings = state.allFindings.filter(f => (!risk || f.risk_level === risk) && (!status || f.status === status)
+        && (!query || [f.identity_name, f.username, f.entitlement_name, f.department, f.role].some(value => String(value || '').toLowerCase().includes(query))))
+        .sort((a, b) => sort === 'name' ? a.identity_name.localeCompare(b.identity_name) : sort === 'pending'
+            ? Number(b.status === 'pending') - Number(a.status === 'pending') || b.risk_score - a.risk_score : b.risk_score - a.risk_score);
     renderFindings();
 }
 
 function renderFindings() {
+    document.getElementById('queue-count').textContent = `${state.filteredFindings.length} / ${state.allFindings.length}`;
     const container = document.getElementById('findings-list');
-    
-    if (state.filteredFindings.length === 0) {
-        container.innerHTML = '<p>No findings match the selected filters.</p>';
-        return;
-    }
-    
-    const html = state.filteredFindings.map(finding => `
-        <div class="finding-card" data-finding-id="${escapeHtml(finding.id)}"
-             role="article" tabindex="0" aria-label="Finding for ${escapeHtml(finding.identity_name)}">
-            <h3>${escapeHtml(finding.identity_name)} - ${escapeHtml(finding.entitlement_name)}</h3>
-            <div class="finding-meta">
-                <span><strong>Risk:</strong> <span class="badge ${finding.risk_level}">${finding.risk_level}</span></span>
-                <span><strong>Status:</strong> <span class="badge ${finding.status}">${finding.status.replace(/_/g, ' ')}</span></span>
-                <span><strong>Policy:</strong> ${escapeHtml(finding.policy_result)}</span>
-                <span><strong>Assessment:</strong> ${escapeHtml(finding.recommended_action || finding.recommendation)}</span>
-                ${finding.reviewer_id ? `<span><strong>Reviewer:</strong> ${escapeHtml(finding.reviewer_id)}</span>` : ''}
-            </div>
-            ${finding.mandatory_human_review ? `
-                <div style="margin-top: 0.5rem; color: var(--color-danger);">
-                    ⚠ Mandatory human review: ${(finding.human_review_reasons || []).map(reason => escapeHtml(reason.replace(/_/g, ' '))).join(', ')}
-                </div>
-            ` : ''}
-            ${finding.decision_blockers && finding.decision_blockers.length > 0 ? `
-                <div style="margin-top: 0.5rem; color: var(--color-danger);">
-                    ⚠ Decision blocked: ${finding.decision_blockers.length} issue(s)
-                </div>
-            ` : ''}
-        </div>
-    `).join('');
-    
-    container.innerHTML = html;
-    
-    // Add click handlers
-    container.querySelectorAll('.finding-card').forEach(card => {
-        const clickHandler = () => {
-            const findingId = card.dataset.findingId;
-            loadFinding(findingId);
-        };
-        card.addEventListener('click', clickHandler);
-        card.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') clickHandler();
-        });
-    });
+    container.innerHTML = state.filteredFindings.length ? state.filteredFindings.map(f => `
+        <button type="button" class="finding-card ${state.currentFinding?.id === f.id ? 'selected' : ''}" data-finding-id="${escapeHtml(f.id)}" aria-pressed="${state.currentFinding?.id === f.id}" aria-label="Review ${escapeHtml(f.identity_name)}: ${escapeHtml(f.entitlement_name)}">
+            <div class="finding-row"><span class="avatar">${escapeHtml(initials(f.identity_name))}</span><span class="finding-identity"><strong>${escapeHtml(f.identity_name)}</strong><small>${escapeHtml(f.department)} · ${escapeHtml(f.username)}</small></span><span class="badge ${escapeHtml(f.risk_level)}">${escapeHtml(f.risk_level)}</span></div>
+            <h3>${escapeHtml(f.entitlement_name)}</h3>
+            <div class="finding-row finding-footer"><span class="badge ${escapeHtml(f.status)}">${escapeHtml(friendly(f.status))}</span><span>${f.decision_blockers?.length ? 'Decision blocked' : escapeHtml(friendly(f.recommended_action || f.recommendation))}<span aria-hidden="true"> -&gt;</span></span></div>
+        </button>`).join('') : '<div class="empty-state compact"><h3>No matching findings</h3><p>Try another search or clear your filters.</p></div>';
+    container.querySelectorAll('[data-finding-id]').forEach(card => card.addEventListener('click', () => loadFinding(card.dataset.findingId)));
 }
 
-// Finding detail
+function saveDecisionDraft() {
+    const form = document.getElementById('decision-form');
+    if (form && state.currentFinding) {
+        const data = new FormData(form);
+        decisionDrafts.set(state.currentFinding.id, { action: data.get('action'), reason: data.get('reason'), acknowledge: data.get('acknowledge_risk') === 'true' });
+    }
+}
+
 async function loadFinding(findingId) {
+    saveDecisionDraft();
+    const request = ++state.findingRequest;
+    const session = state.sessionVersion;
+    const campaignId = state.currentCampaign?.id;
     try {
-        showLoading();
         clearError('finding-error');
-        
+        document.getElementById('review-panel').setAttribute('aria-busy', 'true');
         const finding = await api.getFinding(findingId);
+        if (request !== state.findingRequest || session !== state.sessionVersion || campaignId !== state.currentCampaign?.id) return;
         state.currentFinding = finding;
-        
         renderFindingDetail();
-        showView('finding-detail-view');
-        showLoading(false);
+        renderFindings();
     } catch (error) {
-        showLoading(false);
-        showError('finding-error', error.message || 'Failed to load finding');
+        if (request === state.findingRequest && session === state.sessionVersion) showError('finding-error', error.message || 'Unable to load finding');
+    } finally {
+        if (request === state.findingRequest) document.getElementById('review-panel').setAttribute('aria-busy', 'false');
     }
 }
 
 function renderFindingDetail() {
-    const finding = state.currentFinding;
-    const container = document.getElementById('finding-content');
-    
-    let html = '';
-    
-    // Basic info
-    html += `
-        <div class="finding-detail-section">
-            <h3>Finding Information</h3>
-            <div class="detail-grid">
-                <div class="detail-item">
-                    <span class="detail-label">Identity</span>
-                    <span class="detail-value">${escapeHtml(finding.identity_name)}</span>
-                </div>
-                <div class="detail-item">
-                    <span class="detail-label">Username</span>
-                    <span class="detail-value">${escapeHtml(finding.username)}</span>
-                </div>
-                <div class="detail-item">
-                    <span class="detail-label">Department</span>
-                    <span class="detail-value">${escapeHtml(finding.department)}</span>
-                </div>
-                <div class="detail-item">
-                    <span class="detail-label">Role</span>
-                    <span class="detail-value">${escapeHtml(finding.role)}</span>
-                </div>
-                <div class="detail-item">
-                    <span class="detail-label">Employment Status</span>
-                    <span class="detail-value">${escapeHtml(finding.employment_status)}</span>
-                </div>
-                <div class="detail-item">
-                    <span class="detail-label">Entitlement</span>
-                    <span class="detail-value">${escapeHtml(finding.entitlement_name)}</span>
-                </div>
-                <div class="detail-item">
-                    <span class="detail-label">Sensitivity</span>
-                    <span class="detail-value">${escapeHtml(finding.sensitivity)}</span>
-                </div>
-                <div class="detail-item">
-                    <span class="detail-label">Privileged</span>
-                    <span class="detail-value">${finding.privileged === null ? 'Unknown' : finding.privileged ? 'Yes' : 'No'}</span>
-                </div>
-                <div class="detail-item">
-                    <span class="detail-label">Risk Score</span>
-                    <span class="detail-value">${finding.risk_score}/100</span>
-                </div>
-                <div class="detail-item">
-                    <span class="detail-label">Risk Level</span>
-                    <span class="detail-value"><span class="badge ${finding.risk_level}">${finding.risk_level}</span></span>
-                </div>
-                <div class="detail-item">
-                    <span class="detail-label">Policy Result</span>
-                    <span class="detail-value">${escapeHtml(finding.policy_result)}</span>
-                </div>
-                <div class="detail-item">
-                    <span class="detail-label">Independent Assessment</span>
-                    <span class="detail-value">${escapeHtml(finding.recommended_action || finding.recommendation)}</span>
-                </div>
-                <div class="detail-item">
-                    <span class="detail-label">Status</span>
-                    <span class="detail-value"><span class="badge ${finding.status}">${finding.status.replace(/_/g, ' ')}</span></span>
-                </div>
-                <div class="detail-item">
-                    <span class="detail-label">Version</span>
-                    <span class="detail-value">${finding.version}</span>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    // Signals
-    if (finding.signals && finding.signals.length > 0) {
-        html += `
-            <div class="finding-detail-section">
-                <h3>Risk Signals</h3>
-                <ul class="signals-list">
-                    ${finding.signals.map(signal => `
-                        <li class="signal-item">
-                            <strong>${escapeHtml(signal.code)} (${signal.points} points)</strong>
-                            <span>${escapeHtml(signal.message)}</span>
-                        </li>
-                    `).join('')}
-                </ul>
-            </div>
-        `;
+    const f = state.currentFinding;
+    const assessment = f.explanation;
+    const currentIndex = state.filteredFindings.findIndex(item => item.id === f.id);
+    const field = (label, value) => `<div class="detail-item"><span class="detail-label">${label}</span><span class="detail-value">${escapeHtml(value ?? 'Not recorded')}</span></div>`;
+    const list = values => `<ul class="evidence-list">${values.map(value => `<li>${escapeHtml(value)}</li>`).join('')}</ul>`;
+    const decision = f.can_decide ? renderDecisionForm(f) : `<div class="decision-form"><p class="eyebrow">DECISION</p><h3>${f.decision_blockers?.length ? 'Review is blocked' : 'Decision recorded'}</h3>${f.decision_blockers?.length ? list(f.decision_blockers) : `<p>This finding is ${escapeHtml(friendly(f.status))}.</p>`}</div>`;
+    document.getElementById('finding-content').innerHTML = `
+        <div class="finding-profile"><span class="avatar large">${escapeHtml(initials(f.identity_name))}</span><div><p class="eyebrow">ACCESS FINDING</p><h2>${escapeHtml(f.identity_name)}</h2><p>${escapeHtml(f.role)} · ${escapeHtml(f.department)}</p></div><span class="badge ${escapeHtml(f.risk_level)}">${escapeHtml(f.risk_level)} risk</span></div>
+        <div class="access-heading"><span class="tile-icon" aria-hidden="true">-&gt;</span><div><h3>${escapeHtml(f.entitlement_name)}</h3><p>${escapeHtml(f.source)} · ${escapeHtml(f.username)}</p></div></div>
+        <div class="review-navigation"><span>${currentIndex < 0 ? 'Outside current filters' : `Finding ${currentIndex + 1} of ${state.filteredFindings.length}`}</span><div><button type="button" class="secondary" id="previous-finding" ${currentIndex <= 0 ? 'disabled' : ''} aria-label="Previous finding">&lt;-</button><button type="button" class="secondary" id="next-finding" ${currentIndex < 0 || currentIndex >= state.filteredFindings.length - 1 ? 'disabled' : ''} aria-label="Next finding">-&gt;</button></div></div>
+        <div class="detail-tabs" role="tablist" aria-label="Finding information"><button type="button" role="tab" id="tab-assessment" aria-selected="true" aria-controls="panel-assessment" data-detail-tab="assessment">Assessment</button><button type="button" role="tab" id="tab-evidence" aria-selected="false" aria-controls="panel-evidence" data-detail-tab="evidence" tabindex="-1">Access evidence</button><button type="button" role="tab" id="tab-context" aria-selected="false" aria-controls="panel-context" data-detail-tab="context" tabindex="-1">Identity context</button></div>
+        <section id="panel-assessment" class="detail-tab-panel" role="tabpanel" aria-labelledby="tab-assessment">
+            <div class="assessment-callout"><p class="eyebrow">${assessment?.status === 'ready' ? 'AI ASSESSMENT' : 'RULES FALLBACK · NOT AI'}</p><h3>${escapeHtml(friendly(f.recommended_action || f.recommendation))}</h3><p>${escapeHtml(f.item_assessment?.reasoning || assessment?.reasoning || 'No assessment is available.')}</p></div>
+            <div class="finding-detail-section"><h3>Policy & risk</h3><p>${escapeHtml(f.policy_fact?.text || friendly(f.policy_result))}</p><div class="risk-score"><strong>${f.risk_score}<small>/100</small></strong><span>Risk triage score<br><small>A heuristic, not an authorization decision</small></span></div>${(f.signals || []).map(signal => `<div class="signal-item"><span><strong>${escapeHtml(friendly(signal.code))}</strong><small>${escapeHtml(signal.message)}</small></span><span class="signal-points">+${signal.points}</span></div>`).join('')}</div>
+            ${f.mandatory_human_review ? `<div class="notice"><strong>Human review required</strong><p>${(f.human_review_reasons || []).map(reason => escapeHtml(friendly(reason))).join(' · ')}</p></div>` : ''}
+            ${assessment ? `<details class="assessment-details"><summary>Full case assessment & provider</summary><p>${escapeHtml(assessment.reasoning || '')}</p><p>Provider: <strong>${escapeHtml(assessment.provider)}</strong>${assessment.model ? ` · Model: ${escapeHtml(assessment.model)}` : ''}${assessment.fallback_reason ? ` · Fallback: ${escapeHtml(friendly(assessment.fallback_reason))}` : ''}${assessment.attempted_provider ? ` · Attempted: ${escapeHtml(assessment.attempted_provider)}` : ''}</p><p>${assessment.status === 'ready' ? `Model self-reported confidence: ${Math.round(assessment.confidence * 100)}% (not a measured probability)` : 'Confidence is not applicable to rules fallback.'}</p>${list(assessment.open_questions || [])}${list(assessment.missing_evidence || [])}<p class="help-text">${(f.item_assessment?.evidence_refs || []).map(escapeHtml).join(', ')}</p></details>` : ''}
+        </section>
+        <section id="panel-evidence" class="detail-tab-panel" role="tabpanel" aria-labelledby="tab-evidence" hidden>
+            <div class="finding-detail-section"><h3>Observed access paths</h3><p class="help-text">How this account holds the reviewed capability.</p>${(f.review_evidence?.grant_paths || []).map(path => `<div class="grant-path"><span class="badge">${escapeHtml(path.grant_type)}</span><div>${path.path.map(node => `<span>${escapeHtml(node.ref)}</span>`).join('<b aria-hidden="true">-&gt;</b>')}</div></div>`).join('') || '<p>No grant paths are recorded for this finding.</p>'}</div>
+            ${(f.evidence_gaps || []).length ? `<div class="notice"><strong>Evidence limits</strong>${list(f.evidence_gaps)}</div>` : ''}
+            <div class="detail-grid">${field('Observation', f.evidence?.scanned_at ? formatDate(f.evidence.scanned_at) : null)}${field('Scan ID', f.evidence?.scan_id)}${field('Mapping version', f.evidence?.mapping_version)}${field('HR snapshot', f.evidence?.snapshot_at ? formatDate(f.evidence.snapshot_at) : null)}</div>
+            <details class="assessment-details"><summary>Full source evidence</summary><pre>${escapeHtml(JSON.stringify(f.review_evidence || {}, null, 2))}</pre></details>
+        </section>
+        <section id="panel-context" class="detail-tab-panel" role="tabpanel" aria-labelledby="tab-context" hidden><div class="detail-grid">${field('Identity', f.identity_name)}${field('Account', f.username)}${field('Department', f.department)}${field('Role', f.role)}${field('Employment', friendly(f.employment_status))}${field('Privileged access', f.privileged === null ? 'Unknown' : f.privileged ? 'Yes' : 'No')}${field('Sensitivity', f.sensitivity)}${field('Assigned reviewer', f.reviewer_id)}${field('Routing', f.routing_reason)}</div>${f.peer?.available ? `<div class="finding-detail-section"><h3>Peer context</h3><p>${f.peer.holders} of ${f.peer.count} comparable peers hold this capability.</p><p class="help-text">${escapeHtml(f.peer.reason)}</p></div>` : ''}</section>
+        ${decision}
+        ${f.remediation ? `<div class="finding-detail-section remediation-card"><h3>Remediation</h3><span class="badge ${escapeHtml(f.remediation.state)}">${escapeHtml(friendly(f.remediation.state))}</span><p class="help-text">${escapeHtml(f.remediation.id)}</p>${f.remediation.last_error ? `<p class="error">${escapeHtml(f.remediation.last_error)}</p>` : ''}${state.user.role === 'admin' && ['failed', 'verification_failed'].includes(f.remediation.state) ? '<button type="button" id="retry-remediation-btn">Retry remediation</button>' : ''}</div>` : ''}`;
+    attachFindingHandlers(f);
+    const draft = decisionDrafts.get(f.id);
+    if (draft && f.can_decide) {
+        document.getElementById('decision-reason').value = draft.reason || '';
+        const radio = document.getElementById('action-' + draft.action);
+        if (radio) radio.checked = true;
+        const ack = document.getElementById('acknowledge-risk');
+        if (ack) ack.checked = draft.acknowledge;
     }
-    
-    // Peer information
-    if (finding.peer && finding.peer.available) {
-        html += `
-            <div class="finding-detail-section">
-                <h3>Peer Analysis</h3>
-                <div class="detail-grid">
-                    <div class="detail-item">
-                        <span class="detail-label">Peer Count</span>
-                        <span class="detail-value">${finding.peer.count}</span>
-                    </div>
-                    <div class="detail-item">
-                        <span class="detail-label">Holders</span>
-                        <span class="detail-value">${finding.peer.holders}</span>
-                    </div>
-                    <div class="detail-item">
-                        <span class="detail-label">Ratio</span>
-                        <span class="detail-value">${(finding.peer.ratio * 100).toFixed(1)}%</span>
-                    </div>
-                    <div class="detail-item">
-                        <span class="detail-label">Reason</span>
-                        <span class="detail-value">${escapeHtml(finding.peer.reason)}</span>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-    
-    if (finding.mandatory_human_review) {
-        html += `
-            <div class="finding-detail-section" role="alert">
-                <h3>Mandatory Human Review</h3>
-                <p>${(finding.human_review_reasons || []).map(reason => escapeHtml(reason.replace(/_/g, ' '))).join(', ')}</p>
-            </div>
-        `;
-    }
-
-    // Person-level assessment generated during campaign creation
-    if ((finding.evidence_gaps || []).length) {
-        html += `<div class="finding-detail-section"><h3>Observed Evidence Limits</h3><ul>
-            ${finding.evidence_gaps.map(gap => `<li>${escapeHtml(gap)}</li>`).join('')}</ul></div>`;
-    }
-    if (finding.review_evidence) {
-        html += `<div class="finding-detail-section"><details><summary>Source evidence for this access</summary>
-            <pre>${escapeHtml(JSON.stringify(finding.review_evidence, null, 2))}</pre></details></div>`;
-    }
-    if (finding.explanation) {
-        html += `
-            <div class="explanation-section">
-                <div class="explanation-header">
-                    <h3>Independent Case Assessment</h3>
-                    <div class="explanation-provider">
-                        Provider: <span class="badge">${escapeHtml(finding.explanation.provider)}</span>
-                        ${finding.explanation.model ? ' Model: ' + escapeHtml(finding.explanation.model) : ''}
-                        ${finding.explanation.attempted_provider ? ' (attempted: ' + escapeHtml(finding.explanation.attempted_provider) + ')' : ''}
-                        ${finding.explanation.status === 'fallback' ? ' (fallback: ' + escapeHtml(finding.explanation.fallback_reason) + ')' : ''}
-                    </div>
-                </div>
-                <div class="explanation-text">${escapeHtml(finding.explanation.reasoning || '')}</div>
-                <p><strong>Model self-reported confidence (not a measured probability):</strong> ${finding.explanation.status === 'ready' && typeof finding.explanation.confidence === 'number' ? (finding.explanation.confidence * 100).toFixed(0) + '%' : 'Not applicable — non-AI fallback'}</p>
-                ${finding.item_assessment ? `<p><strong>This access item:</strong> ${escapeHtml(finding.item_assessment.action)} — ${escapeHtml(finding.item_assessment.reasoning)}</p>
-                <p><strong>Evidence references:</strong> ${(finding.item_assessment.evidence_refs || []).map(escapeHtml).join(', ')}</p>` : ''}
-                ${(finding.explanation.open_questions || []).length ? `<p><strong>Open questions:</strong> ${(finding.explanation.open_questions || []).map(escapeHtml).join('; ')}</p>` : ''}
-                ${(finding.explanation.missing_evidence || []).length ? `<p><strong>Missing evidence:</strong> ${(finding.explanation.missing_evidence || []).map(escapeHtml).join('; ')}</p>` : ''}
-            </div>
-        `;
-    }
-    
-    // Decision form
-    if (finding.can_decide) {
-        html += renderDecisionForm(finding);
-    } else if (finding.decision_blockers && finding.decision_blockers.length > 0) {
-        html += `
-            <div class="finding-detail-section">
-                <h3>Decision Blocked</h3>
-                <div class="blockers-list">
-                    <p>The following issues prevent making a decision:</p>
-                    <ul>
-                        ${finding.decision_blockers.map(blocker => `<li>${escapeHtml(blocker)}</li>`).join('')}
-                    </ul>
-                </div>
-            </div>
-        `;
-    }
-    
-    // Remediation info
-    if (finding.remediation) {
-        html += `
-            <div class="finding-detail-section">
-                <h3>Remediation Status</h3>
-                <div class="detail-grid">
-                    <div class="detail-item">
-                        <span class="detail-label">Request ID</span>
-                        <span class="detail-value">${escapeHtml(finding.remediation.id)}</span>
-                    </div>
-                    <div class="detail-item">
-                        <span class="detail-label">State</span>
-                        <span class="detail-value"><span class="badge ${finding.remediation.state}">${finding.remediation.state}</span></span>
-                    </div>
-                    ${finding.remediation.last_error ? `
-                        <div class="detail-item" style="grid-column: 1 / -1;">
-                            <span class="detail-label">Error</span>
-                            <span class="detail-value" style="color: var(--color-danger);">${escapeHtml(finding.remediation.last_error)}</span>
-                        </div>
-                    ` : ''}
-                </div>
-                ${state.user.role === 'admin' && (finding.remediation.state === 'failed' || finding.remediation.state === 'verification_failed') ? `
-                    <button type="button" id="retry-remediation-btn" style="margin-top: 1rem;">
-                        Retry Remediation
-                    </button>
-                ` : ''}
-            </div>
-        `;
-    }
-    
-    container.innerHTML = html;
-    
-    // Attach event handlers
-    attachFindingHandlers(finding);
+    document.getElementById('previous-finding').addEventListener('click', () => loadFinding(state.filteredFindings[currentIndex - 1].id));
+    document.getElementById('next-finding').addEventListener('click', () => loadFinding(state.filteredFindings[currentIndex + 1].id));
+    const tabs = [...document.querySelectorAll('[data-detail-tab]')];
+    const selectTab = tab => {
+        tabs.forEach(item => {
+            const selected = item === tab;
+            item.setAttribute('aria-selected', String(selected));
+            item.tabIndex = selected ? 0 : -1;
+            document.getElementById('panel-' + item.dataset.detailTab).hidden = !selected;
+        });
+    };
+    tabs.forEach((tab, index) => {
+        tab.addEventListener('click', () => selectTab(tab));
+        tab.addEventListener('keydown', event => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+            selectTab(tabs[next]); tabs[next].focus();
+        });
+    });
 }
 
 function renderDecisionForm(finding) {
@@ -744,7 +590,7 @@ function renderDecisionForm(finding) {
     
     return `
         <div class="decision-form">
-            <h3>Make Decision</h3>
+            <p class="eyebrow">YOUR DECISION</p><h3>Complete this review</h3><p class="help-text">Record a reason. Access changes follow the approved remediation workflow.</p>
             <form id="decision-form">
                 <div class="form-group">
                     <label>Action</label>
@@ -793,7 +639,7 @@ function renderDecisionForm(finding) {
                     </div>
                 ` : ''}
                 
-                <button type="submit">Submit Decision</button>
+                <button type="submit">Record decision <span aria-hidden="true">-&gt;</span></button>
                 <div id="decision-error" class="error" role="alert" aria-live="polite"></div>
             </form>
         </div>
@@ -818,7 +664,7 @@ function attachFindingHandlers(finding) {
                 showLoading();
                 await api.retryRemediation(finding.remediation.id);
                 showLoading(false);
-                alert('Retry requested. Refresh to see updates.');
+                notify('Retry processed. The latest verification status is shown below.');
                 await loadFinding(finding.id);
             } catch (error) {
                 showLoading(false);
@@ -855,15 +701,21 @@ async function submitDecision(finding) {
         
         showLoading();
         
-        const idempotencyKey = generateIdempotencyKey();
-        await api.makeDecision(finding.id, decision, idempotencyKey);
+        const signature = JSON.stringify(decision);
+        let pending = decisionRequests.get(finding.id);
+        if (!pending || pending.signature !== signature) { pending = { signature, key: generateIdempotencyKey() }; decisionRequests.set(finding.id, pending); }
+        await api.makeDecision(finding.id, decision, pending.key);
+        decisionDrafts.delete(finding.id);
+        decisionRequests.delete(finding.id);
         const refreshedCampaign = await api.getCampaign(finding.campaign_id);
         state.currentCampaign = refreshedCampaign;
         state.allFindings = refreshedCampaign.findings;
         state.filteredFindings = refreshedCampaign.findings;
         
         showLoading(false);
-        alert('Decision recorded successfully');
+        notify('Decision recorded. You can continue to the next finding.');
+        renderCampaignDetail();
+        document.getElementById('finding-content').innerHTML = ''; // Do not re-save the submitted draft.
         
         // Reload finding
         await loadFinding(finding.id);
@@ -1077,6 +929,20 @@ function renderEnvironment(data) {
         .filter(details => details.open).map(details => details.dataset.detailsKey));
     const modes = { simulated: 'Simulated source', captured_fixture: 'Captured fixture · read only', live: 'Live connector (configured)', unknown: 'Transport not specified' };
     const labels = { queued: 'Queued', scanning: 'Scanning environment', validating: 'Validating evidence', reviewing: 'Reviewing access', completed: 'Review ready', failed: 'Run failed', blocked: 'Review blocked', never_scanned: 'Not scanned yet', last_known: 'Last-known inventory' };
+    const runStages = [
+        ['queued', 'Queued', 'Run accepted'],
+        ['scanning', 'Scanning', 'Fresh source evidence'],
+        ['validating', 'Validating', 'Quality and correlation checks'],
+        ['reviewing', 'Reviewing', 'Policy and case assessment'],
+        ['completed', 'Review ready', 'Findings available']
+    ];
+    const runStageRail = run => {
+        const events = run.events || [];
+        const lastStage = [...events].reverse().find(event => runStages.some(stage => stage[0] === event.state));
+        const activeKey = run.state === 'completed' ? 'completed' : lastStage?.state || run.state;
+        const activeIndex = Math.max(0, runStages.findIndex(stage => stage[0] === activeKey));
+        return `<div class="run-stage-rail" data-state="${escapeHtml(run.state)}">${runStages.map(([key, label, detail], index) => { const state = run.state === 'completed' || index < activeIndex ? 'complete' : index === activeIndex ? 'current' : 'pending'; const event = events.find(item => item.state === key); return `<div class="run-stage ${state}"><span class="run-stage-marker">${state === 'complete' ? '✓' : index + 1}</span><div><strong>${label}</strong><small>${detail}</small>${event ? `<time>${escapeHtml(formatDate(event.timestamp))}</time>` : ''}</div></div>${index < runStages.length - 1 ? '<span class="run-stage-connector" aria-hidden="true"></span>' : ''}`; }).join('')}</div>`;
+    };
     container.innerHTML = data.sources.length ? data.sources.map((source, index) => {
         const run = source.run;
         const busy = environmentActions.has(source.source) || (run && activeRunStates.includes(run.state));
@@ -1109,8 +975,9 @@ function renderEnvironment(data) {
                 <button type="submit" data-focus-key="${escapeHtml(source.source)}:start" ${busy || !source.can_start ? 'disabled' : ''}>${pendingStarts.has(source.source) ? 'Retry submission' : 'Start access review'}</button>
             </form>
             ${run ? `<div class="run-progress" aria-live="polite">
-                <p><strong>${escapeHtml(run.name)}:</strong> ${escapeHtml(labels[run.state] || run.state)} · Attempt ${run.attempts} of 3</p>
-                <p class="help-text">Queued → Scanning → Validating → Reviewing → Review ready</p>
+                <div class="run-progress-heading"><div><p class="eyebrow">CAMPAIGN RUN</p><h3>${escapeHtml(run.name)}</h3></div><span class="run-state ${escapeHtml(run.state)}"><i aria-hidden="true"></i>${escapeHtml(labels[run.state] || run.state)}</span></div>
+                <div class="run-progress-meta"><span>Attempt ${run.attempts} of 3</span><span>${run.scan_id ? 'Snapshot accepted' : 'Waiting for snapshot'}</span></div>
+                ${runStageRail(run)}
                 <details data-details-key="${escapeHtml(source.source)}:progress"><summary data-focus-key="${escapeHtml(source.source)}:progress">Recorded progress</summary><ol>${(run.events || []).map(event => `<li>${escapeHtml(formatDate(event.timestamp))}: ${escapeHtml(labels[event.state] || event.state)}${event.message ? ' — ' + escapeHtml(event.message) : ''}</li>`).join('')}</ol></details>
                 ${run.error ? `<p class="error">${escapeHtml(run.error)}</p>` : ''}
                 ${run.retry_guidance ? `<p>${escapeHtml(run.retry_guidance)}</p>` : ''}
@@ -1187,6 +1054,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // Filters
+    document.getElementById('finding-search').addEventListener('input', applyFilters);
+    document.getElementById('finding-sort').addEventListener('change', applyFilters);
+    document.getElementById('clear-filters-btn').addEventListener('click', () => {
+        for (const id of ['finding-search', 'risk-filter', 'status-filter']) document.getElementById(id).value = '';
+        applyFilters();
+    });
     document.getElementById('risk-filter').addEventListener('change', applyFilters);
     document.getElementById('status-filter').addEventListener('change', applyFilters);
     
