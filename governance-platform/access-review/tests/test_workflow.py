@@ -54,7 +54,8 @@ class WorkflowTests(Case):
     def test_import_idempotence_and_scan_id_immutability(self):
         same=self.service.create_campaign(deepcopy(self.payload),self.admin)
         self.assertEqual(same['id'],self.campaign['id']);self.assertIsNone(same['superseded_by'])
-        changed=deepcopy(self.payload);changed['scan']['assignments'].pop()
+        changed=deepcopy(self.payload);removed=changed['scan']['assignments'].pop()
+        changed['scan']['grant_paths']=[p for p in changed['scan']['grant_paths'] if p['id'] not in removed['grant_path_ids']]
         self.error(409,lambda:self.service.create_campaign(changed,self.admin))
     def test_role_object_scope_and_self_review(self):
         self.error(403,lambda:self.service.create_campaign(self.payload,self.manager))
@@ -161,6 +162,7 @@ class WorkflowTests(Case):
     def test_wrong_stale_partial_mapping_or_reused_verification_fails(self):
         request=dict(source='prototype-system',identity=self.target['account_id'],entitlement=self.target['entitlement_id'],scan_id=self.payload['scan']['scan_id'],mapping_version=self.payload['scan']['mapping_version'],approved_at=timestamp(self.now))
         fresh=deepcopy(self.payload['scan']);fresh.update(scan_id='scan:fresh',request_id='rescan:expected',scanned_at=timestamp(self.now+timedelta(seconds=1)))
+        fresh['grant_paths']=[p for p in fresh['grant_paths'] if not(p['account_id']==self.target['account_id'] and p['entitlement_id']==self.target['entitlement_id'])]
         fresh['assignments']=[a for a in fresh['assignments'] if not(a['identity']==request['identity'] and a['entitlement']==request['entitlement'])]
         for field,value in [('request_id','rescan:wrong'),('mapping_version','other'),('scan_id',request['scan_id']),('scanned_at',timestamp(self.now)),('complete',False)]:
             with self.subTest(field=field):
@@ -274,3 +276,46 @@ class TransportTests(unittest.TestCase):
         with httpx.Client(transport=httpx.MockTransport(response)) as client:
             with self.assertRaises(httpx.HTTPStatusError):HTTPConnector('https://connector.example','token',client=client).scan('source','req:1')
         self.assertEqual(len(seen),1)
+
+class ListCampaignsPerformanceTests(Case):
+    def test_list_campaigns_does_not_call_get_campaign_or_deserialize_all_findings(self):
+        """Regression: list_campaigns must not load full finding payloads."""
+        # Create multiple campaigns with many findings
+        for i in range(3):
+            payload = deepcopy(self.payload)
+            payload['name'] = f'Campaign {i}'
+            payload['scan']['scan_id'] = f'scan:{i}'
+            self.service.create_campaign(payload, self.admin)
+
+        # Mock get_campaign to detect if it's called
+        original_get = self.service.get_campaign
+        get_campaign_calls = []
+        def tracked_get(*args, **kwargs):
+            get_campaign_calls.append(args)
+            return original_get(*args, **kwargs)
+        self.service.get_campaign = tracked_get
+
+        # List campaigns should not call get_campaign
+        result = self.service.list_campaigns(self.admin)
+        self.assertEqual(len(get_campaign_calls), 0, 'list_campaigns must not call get_campaign')
+        self.assertEqual(len(result['campaigns']), 4)  # 3 new + 1 from setUp
+
+        # Verify summary counts are correct
+        for camp in result['campaigns']:
+            self.assertIn('summary', camp)
+            self.assertIn('total', camp['summary'])
+            self.assertGreater(camp['summary']['total'], 0)
+
+    def test_reviewer_sees_only_campaigns_with_visible_findings(self):
+        """Reviewers see campaigns only if they have >= 1 routed finding."""
+        # Manager is routed findings for person-0001's team
+        manager_campaigns = self.service.list_campaigns(self.manager)
+        self.assertGreater(len(manager_campaigns['campaigns']), 0)
+
+        # Outsider has no routed findings
+        outsider_campaigns = self.service.list_campaigns(self.outsider)
+        self.assertEqual(len(outsider_campaigns['campaigns']), 0)
+
+        # Admin sees all campaigns
+        admin_campaigns = self.service.list_campaigns(self.admin)
+        self.assertGreaterEqual(len(admin_campaigns['campaigns']), len(manager_campaigns['campaigns']))

@@ -29,10 +29,11 @@ def _uid_from_account_id(source, account_id):
 def _username_for(transport, uid):
     """Resolve uid -> username on the TARGET, never on the machine we run on."""
     rc, out, err = transport.run(["getent", "passwd", str(uid)])
-    first = out.split(":", 1)[0].strip() if out else ""
-    if rc != 0 or not first:
+    rows = out.strip().splitlines()
+    fields = rows[0].split(':') if len(rows) == 1 else []
+    if rc != 0 or len(fields) != 7 or fields[2] != str(uid) or not fields[0]:
         raise RemediationError(f"no account with uid {uid} on the target")
-    return first
+    return fields[0]
 
 
 def _live_targets(transport, mapping, source, uid, entitlement):
@@ -62,7 +63,10 @@ def _describe(ids):
 def _call(transport, args):
     rc, out, err = transport.run(["sudo", "-n", REMEDIATE, *args])
     try:
-        return json.loads(out)
+        result = json.loads(out)
+        if not isinstance(result, dict) or type(result.get('ok')) is not bool or (rc != 0 and result['ok']):
+            raise ValueError('Unsuccessful or malformed helper response')
+        return result
     except ValueError as exc:
         raise RemediationError(
             f"remediation helper returned invalid JSON: {err.strip() or exc}") from exc
@@ -76,6 +80,8 @@ def revoke(request, mapping, transport, *, source, dry_run=False):
     claims the access was removed.
     """
     request_id = request["request_id"]
+    if not request.get('assignment_ids') or not request.get('grant_path_ids'):
+        return {'request_id': request_id, 'status': 'failed', 'message': 'Nonempty approved target sets are required.'}
 
     if request.get("source") != source:
         return {"request_id": request_id, "status": "failed",

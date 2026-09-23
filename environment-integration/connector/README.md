@@ -16,10 +16,11 @@ remediation.py   generic instruction → native operation
 api.py           HTTP surface
 ```
 
-**Only `discovery.py` and `remediation.py` are Linux-specific.** Swap the target
-for Active Directory and those two are rewritten; `normalize.py`'s output shape
-and the API do not change. That is the generic-core claim made structural rather
-than asserted.
+**Native parsing, mapping and remediation are Linux-specific.** A different
+target, such as Active Directory or RSA, needs its own transport/discovery,
+normalization mapping and approved-remediation implementation. The generic
+scan shape and review API are the reusable boundary; changing environments is
+not just changing credentials or a URL.
 
 The claim was tested in practice when Module 4 moved from scan schema v1 to v2.
 The contract gained four collections and changed three object shapes. Every line
@@ -31,22 +32,23 @@ orthogonal to *what you read from it*. One parser serves all three transports,
 and the fixture transport means the entire discovery path is unit-testable in CI
 with no VM and no network.
 
-**The safety guards live on the target, not in this package.** `iga-remediate`
-sits on the box behind a two-command sudoers allow-list. If this connector were
-compromised entirely it could still only invoke those two commands. Guards
-implemented here would be one bug away from a full bypass.
+**Privileged native safety guards also live on the target.** `iga-remediate`
+is designed to sit behind a two-command sudoers allow-list. The connector
+validates requests and fresh target sets too. The allow-list limits privileged
+commands, not every possible action of a compromised service account. Target
+configuration and helper deployment were not revalidated in this audit.
 
 ## Transports
 
 | `IGA_TRANSPORT` | Pattern | Use |
 | --- | --- | --- |
-| `ssh` | Agentless — the standard IGA pattern | **Demo and default.** Connector runs beside Module 4, reaches the target over SSH. |
-| `local` | Agent-based | Connector runs on the target itself. |
+| `ssh` | Agentless | Explicitly configured; connector reaches the target over SSH. |
+| `local` | Agent-based | Configuration default; connector runs on the target itself. |
 | `fixture` | Read-only capture | CI. Serves `samples/`; revocation is refused by construction. |
 
-Agentless is the pattern real IGA products use for Unix targets, because an
-organisation can hold one credential but cannot deploy an agent to 500 servers.
-Host keys are verified with paramiko's `RejectPolicy` — never `AutoAddPolicy`,
+SSH avoids installing the connector service on each target, although the lab's
+privileged helpers still need deployment. Host keys are verified with
+paramiko's `RejectPolicy` — never `AutoAddPolicy`,
 because an unknown host key means the target is not the machine we were told to
 review.
 
@@ -62,6 +64,9 @@ sudo chmod 700 /home/iga_svc/.ssh && sudo chmod 600 /home/iga_svc/.ssh/authorize
 ```
 
 Where the connector runs:
+
+Verify the target's host-key fingerprint through a trusted channel before
+trusting the result of `ssh-keyscan` below.
 
 ```bash
 ssh-keyscan -p 2222 127.0.0.1 >> ~/.ssh/known_hosts
@@ -81,6 +86,11 @@ GET  /health       no credential          → liveness, mapping version, target
 
 Both POST routes require `Authorization: Bearer <token>`, compared in constant
 time against a SHA-256 hash. The token itself is never stored.
+
+Requests reject unknown fields and type coercion. Revocations require the
+approval metadata and unique, nonempty assignment/path target lists before any
+native access. Malformed or incomplete discovery fails the request; it does not
+produce a complete scan. The mapping source must match the configured source.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -109,9 +119,9 @@ project of why the normalization boundary exists: one generic entitlement,
 `ent:it:infrastructure-admin`, reached by a structurally different route from
 every other entitlement, and Module 4 never learns the word *sudoers*.
 
-One assignment is emitted per account+entitlement pair, citing every route that
-carries it. Two groups mapping to one entitlement is one assignment with two
-grant paths, not two assignments.
+One assignment is emitted per account+entitlement pair, citing every observed
+route. The generic contract supports multiple paths per assignment; this lab's
+mapping format currently supports only one native entry per entitlement.
 
 ## Deliberate decisions
 
@@ -147,15 +157,11 @@ requires unmatched accounts stay visible.
 **A managed group held as a PRIMARY group is still reported.** The lab never
 creates that shape, but a real system can, and dropping it would under-report.
 
-## Limitations we identified in the interface
+## Evidence limits and compatibility
 
-Worth stating in the report rather than being caught by them in questions.
-
-**`Group.privileged` is a required boolean; `Entitlement.privileged` is
-nullable.** The same contract lets a connector decline to classify an
-entitlement but forces it to assert true or false about a group. We emit
-`false`, which is an assertion we have no basis for. The two fields should agree,
-and `bool | None` is the right shape for both.
+**Unknown group privilege is `null`.** Both group and entitlement privilege
+are nullable in the current Module 4 validator. The fields remain required;
+unknown is not the same as non-privileged.
 
 **`account_type` has no source on Linux.** POSIX records no such attribute. The
 service accounts are named in connector configuration (`IGA_SERVICE_ACCOUNTS`)
@@ -164,51 +170,43 @@ it from the login shell would be worse than useless — a deprovisioned human ha
 `nologin` and would be silently reclassified as a service account, hiding the
 lifecycle leftovers a review exists to find.
 
-**Assignment `timestamp` is a fiction on Linux.** The source records no grant
-time. We report the modification time of the file carrying the grant, clamped so
-it is never after `scanned_at` — but `/etc/group`'s mtime is identical for every
-group assignment on the box. The field should arguably be nullable; requiring it
-invites connectors to fabricate precision they do not have.
+**Unknown grant time is `null`.** Linux snapshots do not establish when an
+individual grant was made. Assignment `timestamp` is no longer fabricated from
+file modification time; `scanned_at` records when evidence was observed. These
+nullable extensions retain schema version `2.0.0`; older consumers requiring
+timestamp strings or group booleans must be updated before using this connector.
 
 **The scan asks the connector to classify entitlements.** `sensitivity` and
 `privileged` are fields a source-system connector cannot honestly populate.
 `unknown`/`null` is permitted and is what we emit, but the fields' existence
 invites guessing that would silently compete with Module 1's catalog.
 
-**Full snapshot per scan, no pagination.** Fine at 69 accounts, wrong at 50,000.
-There is no cursor or incremental-scan concept in the contract.
+**Full snapshot per scan, no pagination.** There is no cursor or incremental-scan
+concept in the contract. Large-directory scale has not been tested.
 
 **`complete` is a single boolean.** There is no way to express "accounts read
 fully, sudo partially." Real connectors have patchy visibility; a coverage object
 would carry more.
 
-## Tests
+## Verified tests — 2026-09-23
 
-```bash
-python3 tests/test_connector.py
+From the project root, with the HR, review and connector packages installed:
+
+```powershell
+& '.\governance-platform\access-review\.venv-ai\Scripts\python.exe' -m unittest discover -s environment-integration/connector/tests -p test_offline_audit.py
 ```
 
-59 assertions against a live seeded lab: authentication, exact contract key sets
-for all seven object types, referential integrity, grant-path structure, the
-complete seeded truth discovered with nothing invented, idempotent replay,
-conflicting key reuse, stale mapping version, wrong source, rejection of an
-approved target set that no longer matches, and a revoke-then-verify cycle
-proving one assignment and its grant path disappeared and nothing else changed.
+All **14 offline audit tests passed**. They validate 367 captured assignments and
+367 paths using Module 4's actual `Scan` model, compare every policy result with
+the Module 2 planner, reject malformed/partial native reads and ambiguous
+mappings, exercise strict API validation and idempotent read-only revocation,
+and start a real localhost HTTP connector for Module 4 import/export and audit
+verification. Fixture revocation remains `fixture_is_read_only`; no native
+access was removed.
 
-The suite imports **Module 4's own `Scan` model** from the sibling package and
-validates the scan document against it. Hand-written assertions say what we
-believe their contract means; that one check is the contract itself. When it
-moves again, this suite fails here rather than during a live campaign. If
-`iga_review` cannot be imported the check reports SKIP rather than passing
-silently.
-
-Verified on all three transports:
-
-| Transport | Result |
-| --- | --- |
-| `ssh` | 367/367 assignments, 367 grant paths (3 direct, 364 inherited) |
-| `local` | 367/367 assignments |
-| `fixture` | Runs offline; revocation refused as `fixture_is_read_only` |
-
-The least-privilege boundary was checked by hand over SSH: `iga-inspect` and
-`iga-remediate` succeed, and `sudo -n cat /etc/shadow` is refused.
+`tests/test_connector.py` is a legacy live-lab script, skipped by ordinary test
+discovery. Run it explicitly only against a disposable lab; non-fixture execution
+also requires `IGA_ALLOW_LIVE_MUTATIONS=1`. It can remove real target grants.
+Live SSH/local transport, deployed helper permissions and native revoke-then-scan
+behavior were **not rerun** in this audit. Updated helper code in `lab.py` has not
+been deployed to any target.

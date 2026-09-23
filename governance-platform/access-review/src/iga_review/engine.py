@@ -4,7 +4,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from .domain import EngineConfig, InputError, digest, instant
 
-ENGINE_VERSION = '2.1.0'
+ENGINE_VERSION = '2.2.0'
 SENSITIVITY = {'unknown': 20, 'low': 0, 'medium': 5, 'high': 10, 'critical': 20}
 POINTS = {'expected': 0, 'permitted_privileged': 10, 'restricted': 65,
           'lifecycle_restricted': 75, 'unauthorized_privilege': 65, 'unlisted': 30,
@@ -87,9 +87,9 @@ def evaluate(bundle, scan, correlations, *, now, config=EngineConfig()):
         privileged = authoritative.privileged if authoritative else observed.privileged if observed else None
         signals = [{'code': result, 'message': MESSAGES[result], 'points': POINTS[result]}]
         if observed and authoritative:
-            if observed.sensitivity != authoritative.sensitivity or (observed.privileged is not None and observed.privileged != authoritative.privileged):
+            if (observed.sensitivity != 'unknown' and observed.sensitivity != authoritative.sensitivity) or (observed.privileged is not None and observed.privileged != authoritative.privileged):
                 signals.append({'code': 'catalog_mismatch', 'message': 'Source classification differs from policy; the more conservative classification is retained.', 'points': 10})
-            if SENSITIVITY[observed.sensitivity] > SENSITIVITY[sensitivity]:
+            if observed.sensitivity != 'unknown' and SENSITIVITY[observed.sensitivity] > SENSITIVITY[sensitivity]:
                 sensitivity = observed.sensitivity
             privileged = privileged or bool(observed.privileged)
         if entitlement_id:
@@ -242,6 +242,15 @@ def evaluate(bundle, scan, correlations, *, now, config=EngineConfig()):
                            ('exception', case_exceptions), ('history', case_history)):
             evidence_refs += [f'{kind}:{row["id"]}' for row in rows]
         evidence_refs.append(f'scan:{scan.scan_id}')
+        gaps = []
+        if case_assignments:
+            gaps.append('Usage/last-used telemetry is not part of this scan contract; do not infer inactivity.')
+            if any(row.business_justification is None for row in case_assignments):
+                gaps.append('Business justification is missing for one or more assignments.')
+            if any(row.timestamp is None for row in case_assignments):
+                gaps.append('Grant time is unknown for one or more assignments; scan time is not grant time.')
+            if not case_history:
+                gaps.append('No access history was supplied; this does not establish that access was never used or reviewed.')
         cases.append({
             'key': digest([scan.source, 'case', owner])[:32],
             'identity_id': person_id,
@@ -262,5 +271,6 @@ def evaluate(bundle, scan, correlations, *, now, config=EngineConfig()):
                                       for x in sorted(item_entitlements)],
             'evidence_refs': evidence_refs,
             'warnings': warnings,
+            'evidence_gaps': gaps,
         })
     return {'cases': cases, 'findings': findings, 'warnings': warnings, 'actionable': actionable}

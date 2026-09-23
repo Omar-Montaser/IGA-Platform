@@ -45,11 +45,15 @@ def parse_passwd(text):
     """name:passwd:uid:gid:gecos:home:shell"""
     rows = []
     for line in text.splitlines():
-        parts = line.split(":")
-        if len(parts) < 7 or not parts[2].isdigit():
+        if not line.strip():
             continue
+        parts = line.split(":")
+        if len(parts) != 7 or not parts[0] or not parts[2].isdigit() or not parts[3].isdigit():
+            raise DiscoveryError('Malformed passwd record; refusing incomplete discovery.')
         rows.append({"username": parts[0], "uid": int(parts[2]), "gid": int(parts[3]),
                      "gecos": parts[4].split(",")[0], "shell": parts[6]})
+    if len({r['username'] for r in rows}) != len(rows) or len({r['uid'] for r in rows}) != len(rows):
+        raise DiscoveryError('Ambiguous account name or UID in passwd enumeration.')
     return rows
 
 
@@ -57,19 +61,22 @@ def parse_group(text):
     """name:passwd:gid:member,member"""
     rows = []
     for line in text.splitlines():
-        parts = line.split(":")
-        if len(parts) < 4 or not parts[2].isdigit():
+        if not line.strip():
             continue
+        parts = line.split(":")
+        if len(parts) != 4 or not parts[0] or not parts[2].isdigit():
+            raise DiscoveryError('Malformed group record; refusing incomplete discovery.')
         members = [m for m in parts[3].split(",") if m]
         rows.append({"name": parts[0], "gid": int(parts[2]), "members": members})
+    if len({r['name'] for r in rows}) != len(rows) or len({r['gid'] for r in rows}) != len(rows):
+        raise DiscoveryError('Ambiguous group name or GID in group enumeration.')
     return rows
 
 
 def _getent(transport, database):
     rc, out, err = transport.run(["getent", database])
-    # getent exits 2 when a requested key is missing; a bare enumeration
-    # returning rows is still usable.
-    if rc not in (0, 2) or not out.strip():
+    # Enumeration must succeed completely; partial rows cannot prove absence.
+    if rc != 0 or not out.strip():
         raise DiscoveryError(f"could not read {database}: {err.strip() or f'exit {rc}'}")
     return out
 
@@ -80,7 +87,13 @@ def _sudo_grants(transport):
         raise DiscoveryError(
             f"privileged sudo inspection failed: {err.strip() or f'exit {rc}'}")
     try:
-        return json.loads(out)
+        result = json.loads(out)
+        if not isinstance(result, dict) or any(
+                not isinstance(name, str) or not isinstance(lines, list)
+                or not all(isinstance(line, str) and not line.startswith('<unreadable:') for line in lines)
+                for name, lines in result.items()):
+            raise ValueError('Invalid or incomplete sudo inspection')
+        return result
     except ValueError as exc:
         raise DiscoveryError(f"iga-inspect returned invalid JSON: {exc}") from exc
 

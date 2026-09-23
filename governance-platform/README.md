@@ -10,4 +10,6 @@ It provides the validated identity and policy files consumed by Module 4.
 engine, independent person-level AI review, deterministic safety constraints,
 authenticated reviewer UI/API, durable decision and exact grant-path
 remediation workflow, fresh-scan verification, audit trail, CLI, and tests.
-Live Module 3 connector integration remains follow-on work.
+Module 3's captured Linux evidence and HTTP connector are integrated and tested.
+Live SSH/RSA deployment and model-quality evaluation remain follow-on work.
+See the [root README](../README.md) for executed checks and remaining limitations.

@@ -5,6 +5,7 @@
 
 // State management
 const state = {
+    sessionVersion: 0,
     token: null,
     user: null,
     campaigns: [],
@@ -19,6 +20,10 @@ const api = {
     baseUrl: window.location.origin,
     
     async request(endpoint, options = {}) {
+        const sessionVersion = state.sessionVersion;
+        const assertSession = () => {
+            if (sessionVersion !== state.sessionVersion) throw new Error('Session changed; response discarded.');
+        };
         const headers = {
             'Content-Type': 'application/json',
             ...options.headers
@@ -35,6 +40,7 @@ const api = {
         
         try {
             const response = await fetch(`${this.baseUrl}${endpoint}`, config);
+            assertSession();
             
             // Handle error responses
             if (!response.ok) {
@@ -47,6 +53,7 @@ const api = {
                 let errorData;
                 try {
                     errorData = await response.json();
+                    assertSession();
                 } catch {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
@@ -61,7 +68,9 @@ const api = {
             // Success - return JSON
             const contentType = response.headers.get('content-type');
             if (contentType && contentType.includes('application/json')) {
-                return await response.json();
+                const data = await response.json();
+                assertSession();
+                return data;
             }
             return null;
         } catch (error) {
@@ -122,9 +131,8 @@ const api = {
 
 // Utility functions
 function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return String(text ?? '').replace(/[&<>"']/g, character => entities[character]);
 }
 
 function formatDate(isoString) {
@@ -172,6 +180,7 @@ function clearError(elementId) {
 
 // Authentication
 async function login(token) {
+    const sessionVersion = ++state.sessionVersion;
     try {
         showLoading();
         clearError('login-error');
@@ -187,21 +196,21 @@ async function login(token) {
         document.getElementById('main-view').classList.remove('hidden');
         
         // Update header
-        document.getElementById('user-name').textContent = escapeHtml(user.name);
+        document.getElementById('user-name').textContent = user.name;
+        document.getElementById('token-input').value = '';
         const roleBadge = document.getElementById('user-role');
         roleBadge.textContent = user.role;
         roleBadge.className = `badge ${user.role}`;
         
         // Show audit nav for admins
-        if (user.role === 'admin') {
-            document.getElementById('audit-nav-btn').hidden = false;
-        }
+        document.getElementById('audit-nav-btn').hidden = user.role !== 'admin';
         
         // Load campaigns
         await loadCampaigns();
         
         showLoading(false);
     } catch (error) {
+        if (sessionVersion !== state.sessionVersion) return;
         showLoading(false);
         state.token = null;
         state.user = null;
@@ -210,11 +219,20 @@ async function login(token) {
 }
 
 function logout(message = null) {
+    state.sessionVersion += 1;
     state.token = null;
     state.user = null;
     state.campaigns = [];
     state.currentCampaign = null;
     state.currentFinding = null;
+    state.allFindings = [];
+    state.filteredFindings = [];
+    for (const id of ['campaigns-list', 'campaign-actions', 'campaign-summary', 'campaign-warnings',
+                      'findings-list', 'finding-content', 'audit-content', 'audit-campaign-select',
+                      'user-name', 'user-role', 'campaign-name']) {
+        document.getElementById(id).textContent = '';
+    }
+    document.getElementById('audit-nav-btn').hidden = true;
     
     document.getElementById('main-view').classList.add('hidden');
     document.getElementById('login-view').classList.remove('hidden');
@@ -624,6 +642,14 @@ function renderFindingDetail() {
     }
 
     // Person-level assessment generated during campaign creation
+    if ((finding.evidence_gaps || []).length) {
+        html += `<div class="finding-detail-section"><h3>Observed Evidence Limits</h3><ul>
+            ${finding.evidence_gaps.map(gap => `<li>${escapeHtml(gap)}</li>`).join('')}</ul></div>`;
+    }
+    if (finding.review_evidence) {
+        html += `<div class="finding-detail-section"><details><summary>Source evidence for this access</summary>
+            <pre>${escapeHtml(JSON.stringify(finding.review_evidence, null, 2))}</pre></details></div>`;
+    }
     if (finding.explanation) {
         html += `
             <div class="explanation-section">
@@ -637,7 +663,9 @@ function renderFindingDetail() {
                     </div>
                 </div>
                 <div class="explanation-text">${escapeHtml(finding.explanation.reasoning || '')}</div>
-                <p><strong>Confidence:</strong> ${typeof finding.explanation.confidence === 'number' ? (finding.explanation.confidence * 100).toFixed(0) + '%' : 'Not available'}</p>
+                <p><strong>Model self-reported confidence (not a measured probability):</strong> ${finding.explanation.status === 'ready' && typeof finding.explanation.confidence === 'number' ? (finding.explanation.confidence * 100).toFixed(0) + '%' : 'Not applicable — non-AI fallback'}</p>
+                ${finding.item_assessment ? `<p><strong>This access item:</strong> ${escapeHtml(finding.item_assessment.action)} — ${escapeHtml(finding.item_assessment.reasoning)}</p>
+                <p><strong>Evidence references:</strong> ${(finding.item_assessment.evidence_refs || []).map(escapeHtml).join(', ')}</p>` : ''}
                 ${(finding.explanation.open_questions || []).length ? `<p><strong>Open questions:</strong> ${(finding.explanation.open_questions || []).map(escapeHtml).join('; ')}</p>` : ''}
                 ${(finding.explanation.missing_evidence || []).length ? `<p><strong>Missing evidence:</strong> ${(finding.explanation.missing_evidence || []).map(escapeHtml).join('; ')}</p>` : ''}
             </div>
@@ -699,7 +727,7 @@ function renderFindingDetail() {
 
 function renderDecisionForm(finding) {
     const actions = finding.allowed_actions || [];
-    const needsAck = finding.recommendation !== 'certify' && actions.includes('certify');
+    const needsAck = (finding.recommendation !== 'certify' || finding.mandatory_human_review) && actions.includes('certify');
     
     return `
         <div class="decision-form">
@@ -816,6 +844,10 @@ async function submitDecision(finding) {
         
         const idempotencyKey = generateIdempotencyKey();
         await api.makeDecision(finding.id, decision, idempotencyKey);
+        const refreshedCampaign = await api.getCampaign(finding.campaign_id);
+        state.currentCampaign = refreshedCampaign;
+        state.allFindings = refreshedCampaign.findings;
+        state.filteredFindings = refreshedCampaign.findings;
         
         showLoading(false);
         alert('Decision recorded successfully');

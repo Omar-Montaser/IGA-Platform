@@ -711,3 +711,8 @@ textarea {
         flex-direction: column;
     }
 }
+/* Keep source evidence readable without widening the entire review page. */
+.finding-detail-section pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}

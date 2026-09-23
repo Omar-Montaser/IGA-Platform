@@ -23,10 +23,6 @@ from uuid import uuid4
 SCHEMA_VERSION = "2.0.0"
 
 
-def _ts(epoch):
-    return datetime.fromtimestamp(epoch, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def _now():
     return datetime.now(timezone.utc)
 
@@ -65,9 +61,31 @@ class Mapping:
     """Native <-> generic entitlement translation. Module 3 owns this."""
 
     def __init__(self, document):
+        def valid_id(value):
+            return (isinstance(value, str) and bool(value) and value == value.strip()
+                    and len(value) <= 2000
+                    and not any(ord(char) < 32 or ord(char) == 127 for char in value))
+
+        if (not isinstance(document, dict)
+                or not valid_id(document.get('mapping_version'))
+                or not valid_id(document.get('source'))
+                or not isinstance(document.get('entitlements'), dict)):
+            raise ValueError('Invalid mapping document')
+        for entitlement, entry in document['entitlements'].items():
+            if (not valid_id(entitlement) or not isinstance(entry, dict)
+                    or not valid_id(entry.get('native_type'))
+                    or not valid_id(entry.get('native_id'))):
+                raise ValueError('Invalid native entitlement mapping')
         self.version = document["mapping_version"]
         self.source = document["source"]
         self.entries = document["entitlements"]
+        native_keys = [(entry['native_type'], entry['native_id']) for entry in self.entries.values()]
+        if any(kind not in ('posix_group', 'sudo') for kind, _ in native_keys):
+            raise ValueError('Unsupported native entitlement type')
+        if len(set(native_keys)) != len(native_keys):
+            raise ValueError('Native mappings must be unambiguous')
+        if sum(kind == 'sudo' for kind, _ in native_keys) > 1:
+            raise ValueError('The lab sudo inspector supports only one sudo entitlement')
         self._group_to_ent = {
             e["native_id"]: eid for eid, e in self.entries.items()
             if e["native_type"] == "posix_group"
@@ -130,7 +148,7 @@ def held_entitlements(account, mapping, source):
 
 def build_scan(accounts, mapping, *, mtimes=None, source, request_id=None,
                complete=True, now=None, service_accounts=()):
-    mtimes = mtimes or {}
+    # mtimes remains accepted for older callers, but file times are not grant times.
     scanned = now or _now()
     # Sub-second precision is required, not cosmetic. Module 4 rejects a
     # verification scan whose scanned_at is <= the approval it verifies
@@ -139,14 +157,8 @@ def build_scan(accounts, mapping, *, mtimes=None, source, request_id=None,
     # earlier, and the verification fails intermittently - most likely during a
     # fast demo. Their `instant()` accepts 1-6 fractional digits.
     scanned_at = scanned.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-    ceiling = scanned.timestamp()
     service = set(service_accounts)
     app = application_id(source)
-
-    def grant_time(path):
-        """Linux records no grant time. The modification time of the file that
-        carries the grant is the best available evidence; never after the scan."""
-        return _ts(min(mtimes.get(path, ceiling), ceiling))
 
     # One application. The target is a single host, and the department prefix
     # inside an entitlement ID is Module 1's vocabulary, not an application
@@ -159,13 +171,12 @@ def build_scan(accounts, mapping, *, mtimes=None, source, request_id=None,
     }]
 
     # A POSIX group becomes a generic group node so that grant paths can pass
-    # through it. `privileged` is a required bool here, unlike the entitlement's
-    # nullable one - see the limitations note in the README.
+    # through it. Classification is unknown, not an assertion of low privilege.
     groups = [{
         "id": group_id(source, native),
         "name": native,
         "application_id": app,
-        "privileged": False,
+        "privileged": None,
         "source": source,
     } for native in mapping.managed_groups]
 
@@ -213,7 +224,8 @@ def build_scan(accounts, mapping, *, mtimes=None, source, request_id=None,
                 "identity": aid,
                 "entitlement": eid,
                 "source": source,
-                "timestamp": min(grant_time(r.evidence) for r in routes),
+                # File modification/scan times cannot establish grant time.
+                "timestamp": None,
                 "grant_path_ids": [r.path_id for r in routes],
                 # Linux carries neither of these. Present as null, not omitted.
                 "business_justification": None,

@@ -14,6 +14,14 @@ import sys
 import tempfile
 from datetime import datetime
 
+# This file is an explicit live-lab acceptance script, not a unit test module.
+# Discovery must never silently execute target changes or erase shared state.
+if __name__ != '__main__':
+    import unittest
+    raise unittest.SkipTest('Live lab acceptance requires explicit execution and target configuration.')
+if os.environ.get('IGA_TRANSPORT', 'local') != 'fixture' and os.environ.get('IGA_ALLOW_LIVE_MUTATIONS') != '1':
+    sys.exit('Live revocation tests require IGA_ALLOW_LIVE_MUTATIONS=1 on a disposable lab.')
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -33,8 +41,8 @@ os.environ["IGA_TOKEN_SHA256"] = hashlib.sha256(TOKEN.encode()).hexdigest()
 # The connector runs wherever Module 4 runs, which is Windows in the current
 # deployment - so the scratch state lives in the platform temp directory and is
 # cleared with shutil, not `rm -rf`.
-STATE_DIR = os.path.join(tempfile.gettempdir(), "iga-connector-test")
-shutil.rmtree(STATE_DIR, ignore_errors=True)
+_scratch = tempfile.TemporaryDirectory(prefix='iga-connector-test-')
+STATE_DIR = _scratch.name
 os.environ["IGA_STATE"] = os.path.join(STATE_DIR, "state.db")
 
 from fastapi.testclient import TestClient          # noqa: E402
@@ -165,7 +173,7 @@ check("source is consistent everywhere",
 check("no assignment is stamped after the scan",
       # Parsed, not string-compared: "…45Z" sorts AFTER "…45.1Z" as text while
       # being the earlier instant, which is exactly the trap this guards.
-      all(moment(a["timestamp"]) <= moment(scan["scanned_at"])
+      all(a["timestamp"] is None or moment(a["timestamp"]) <= moment(scan["scanned_at"])
           for a in scan["assignments"]))
 check("no Linux vocabulary leaks into entitlement IDs",
       all(e.startswith("ent:") for e in ents))

@@ -15,14 +15,18 @@ from .explanations import (StructuredReviewer, OpenAIReviewer, RuleReviewer,
 GEMINI_MODEL = 'gemini-3.8-flash'
 GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions'
 
+GROQ_MODEL = 'llama-3.3-70b-versatile'
+GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions'
+
 
 class GeminiReviewer(StructuredReviewer):
     provider = 'gemini'
+    endpoint = GEMINI_ENDPOINT
 
     def __init__(self, api_key, model=GEMINI_MODEL, client=None, *, interval=6.0):
         super().__init__(api_key, model, client)
         if not 0 <= interval <= 60:
-            raise ValueError('Gemini request interval must be between 0 and 60 seconds')
+            raise ValueError('AI request interval must be between 0 and 60 seconds')
         self._interval = interval
         self._lock = threading.Lock()
         self._next_request = 0.0
@@ -55,14 +59,17 @@ class GeminiReviewer(StructuredReviewer):
             'store': False,
         }
 
+    def _headers(self):
+        return {'x-goog-api-key': self._api_key}
+
     def _request(self, client, payload):
         delay = self._next_request - time.monotonic()
         if delay > 0:
             time.sleep(delay)
         self._next_request = time.monotonic() + self._interval
         # Read in bounded chunks, never follow redirects with the API key.
-        with client.stream('POST', GEMINI_ENDPOINT, json=payload,
-                           headers={'x-goog-api-key': self._api_key},
+        with client.stream('POST', self.endpoint, json=payload,
+                           headers=self._headers(),
                            timeout=httpx.Timeout(120.0, connect=10.0),
                            follow_redirects=False) as response:
             if response.status_code == 429:
@@ -96,6 +103,63 @@ class GeminiReviewer(StructuredReviewer):
         return texts[0]
 
 
+class GroqReviewer(GeminiReviewer):
+    """Groq JSON mode with local schema validation, pacing and bounded transport."""
+    provider = 'groq'
+    endpoint = GROQ_ENDPOINT
+
+    def __init__(self, api_key, model=GROQ_MODEL, client=None, *, interval=6.0):
+        super().__init__(api_key, model, client, interval=interval)
+
+    def _payload(self, evidence, schema):
+        return {
+            'model': self.model,
+            'messages': [
+                {'role': 'system', 'content': _INSTRUCTIONS + (
+                    ' Assess every supplied item exactly once. Cite at least one supplied '
+                    'evidence reference for the case and for each item. Explain why access '
+                    'is or is not justified using lifecycle, job needs, privilege, grant '
+                    'paths, exceptions and history. Peer prevalence is context, not '
+                    'authorization. Do not invent approvals, usage, dates or policy. '
+                    'Identify absent evidence and uncertainty; confidence is your '
+                    'self-assessment, not a calibrated probability. Keep each reasoning '
+                    'field concise, under 4000 characters, with no line breaks. '
+                    'Return one JSON object following this schema exactly: ') + json.dumps(schema)},
+                {'role': 'user', 'content': json.dumps(evidence, sort_keys=True, allow_nan=False)}
+            ],
+            # Llama 3.3 does not support Groq's strict json_schema mode.
+            # JSON mode plus the same local validator fails closed on bad output.
+            'response_format': {'type': 'json_object'},
+            'temperature': 0.1,
+            'max_tokens': 4000,
+        }
+
+    def _headers(self):
+        return {'Authorization': f'Bearer {self._api_key}'}
+
+    def _output_text(self, body):
+        if body.get('error'):
+            raise _InvalidReview('invalid_response')
+        choices = body.get('choices', [])
+        if len(choices) != 1:
+            raise _InvalidReview('invalid_response')
+        if choices[0].get('finish_reason') == 'length':
+            raise _InvalidReview('incomplete_response')
+        if choices[0].get('finish_reason') != 'stop':
+            raise _InvalidReview('invalid_response')
+        message = choices[0].get('message', {})
+        if message.get('refusal'):
+            raise _InvalidReview('refused')
+        if message.get('tool_calls') or message.get('function_call'):
+            raise _InvalidReview('invalid_response')
+        if message.get('role') != 'assistant':
+            raise _InvalidReview('invalid_response')
+        content = message.get('content')
+        if not isinstance(content, str) or not content:
+            raise _InvalidReview('invalid_response')
+        return content
+
+
 def configured_reviewer(environ=None):
     env = os.environ if environ is None else environ
     mode = env.get('IGA_AI_PROVIDER', 'auto')
@@ -117,7 +181,13 @@ def configured_reviewer(environ=None):
         if not key or not model:
             raise ValueError('Explicit OpenAI mode requires OPENAI_API_KEY and IGA_AI_MODEL')
         return OpenAIReviewer(key, model)
-    raise ValueError('IGA_AI_PROVIDER must be auto, gemini, rules or openai')
+    if mode == 'groq':
+        key = env.get('GROQ_API_KEY')
+        if not key:
+            raise ValueError('Groq mode requires GROQ_API_KEY')
+        model = env.get('IGA_AI_MODEL') or GROQ_MODEL
+        return GroqReviewer(key, model, interval=float(env.get('IGA_AI_INTERVAL_SECONDS', '6')))
+    raise ValueError('IGA_AI_PROVIDER must be auto, gemini, groq, rules or openai')
 
 
 def check_connection(reviewer):

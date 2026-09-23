@@ -23,7 +23,8 @@ class ServiceError(Exception):
 
 class ReviewService:
     def __init__(self, db_path, users, *, fallback_reviewer_id=None, connectors=None,
-                 explainer=None, config=EngineConfig(), clock=utcnow, demo=False):
+                 explainer=None, config=EngineConfig(), clock=utcnow, demo=False,
+                 allow_external_ai_data=False):
         self.store = Store(db_path)
         self.users = {u.id: u for u in users}
         if len(self.users) != len(users) or not users:
@@ -42,6 +43,7 @@ class ReviewService:
         self.reviewer = explainer or RuleReviewer()
         self.explainer = self.reviewer
         self.config, self.clock, self.demo = config, clock, demo
+        self.allow_external_ai_data = allow_external_ai_data
 
     def authenticate(self, token):
         token_hash = hashlib.sha256(token.encode()).hexdigest()
@@ -95,6 +97,10 @@ class ReviewService:
                 reasons.add('low_ai_confidence')
             if assessment['missing_evidence']:
                 reasons.add('missing_evidence')
+            if assessment['open_questions']:
+                reasons.add('open_questions')
+            if case.get('evidence_gaps'):
+                reasons.add('evidence_gaps')
             for item in case['items']:
                 if item['privileged']:
                     reasons.add('privileged_access')
@@ -110,13 +116,19 @@ class ReviewService:
     def _finding(self, row, actor, warnings):
         item = json.loads(row['payload_json'])
         self_review = bool(actor.hr_identity_id and actor.hr_identity_id == item['identity_id'])
+        constraints = item.get('constraints', [])
+        constraint_blockers = [c['text'] for c in constraints if c['effect'] == 'decision_blocked']
         can_decide = (not warnings and row['status'] == 'pending' and row['reviewer_id'] is not None
-                      and not self_review and self._visible(row, actor))
+                      and not constraint_blockers and not self_review and self._visible(row, actor))
+        actions = ['certify', 'revoke'] if item['kind'] == 'assignment' else ['acknowledge']
+        required = {c['required_action'] for c in constraints if c['effect'] == 'non_discretionary'}
+        if required:
+            actions = [a for a in actions if {'certify': 'retain', 'revoke': 'remove', 'acknowledge': 'investigate'}[a] in required]
         item.update(id=row['id'], campaign_id=row['campaign_id'], status=row['status'], version=row['version'],
                     reviewer_id=row['reviewer_id'], routing_reason=row['routing_reason'],
                     explanation=json.loads(row['explanation_json']), can_decide=can_decide,
-                    allowed_actions=(['certify', 'revoke'] if item['kind'] == 'assignment' else ['acknowledge']) if can_decide else [],
-                    decision_blockers=warnings + (['Self-review is not permitted.'] if self_review else []) +
+                    allowed_actions=actions if can_decide else [],
+                    decision_blockers=list(dict.fromkeys(warnings + constraint_blockers)) + (['Self-review is not permitted.'] if self_review else []) +
                         (['Reviewer routing is unresolved.'] if row['reviewer_id'] is None else []))
         return item
 
@@ -124,6 +136,11 @@ class ReviewService:
         self._admin(actor)
         inputs = CampaignInput.model_validate(payload)
         bundle = validate_documents(inputs.identities, inputs.policies)
+        # Enforce consent at ingestion, not merely CLI startup: a demo server
+        # can receive arbitrary imports and service callers may bypass the CLI.
+        if not bundle.synthetic and getattr(self.reviewer, 'provider', 'external') != 'rules' and not self.allow_external_ai_data:
+            raise ServiceError(403, 'ai_data_consent_required',
+                               'External AI review of non-synthetic data requires explicit data-owner approval.')
         result = evaluate(bundle, inputs.scan, inputs.correlations, now=self.clock(), config=self.config)
         content = inputs.model_dump()
         fingerprint = digest({'inputs': content, 'engine': ENGINE_VERSION, 'configuration': asdict(self.config)})
@@ -172,6 +189,12 @@ class ReviewService:
                         proposed = item_assessments[finding['key']]['action']
                         item_reasons = set(reasons)
                         finding = {**finding, 'case_id': case_id, 'case_assessment': assessment,
+                                   'evidence_gaps': case.get('evidence_gaps', []),
+                                   'review_evidence': {
+                                       'assignments': [a for a in case['assignments'] if a['id'] in finding['assignment_ids']],
+                                       'grant_paths': [p for p in case['grant_paths'] if p['id'] in finding['grant_path_ids']],
+                                       'exceptions': [e for e in case['exceptions'] if e['account_id'] == finding['account_id'] and e['entitlement_id'] == finding['entitlement_id']],
+                                       'history': [h for h in case['history'] if h['account_id'] == finding['account_id'] and h['entitlement_id'] in (None, finding['entitlement_id'])]},
                                    'item_assessment': item_assessments[finding['key']],
                                    'recommended_action': proposed,
                                    'recommendation': {'retain': 'certify', 'remove': 'revoke',
@@ -210,16 +233,42 @@ class ReviewService:
 
     def list_campaigns(self, actor):
         with self.store.read() as conn:
-            ids = [r[0] for r in conn.execute('SELECT id FROM campaigns ORDER BY rowid DESC')]
-        result = []
-        for campaign_id in ids:
-            try:
-                campaign = self.get_campaign(campaign_id, actor)
-                campaign.pop('findings')
-                result.append(campaign)
-            except ServiceError as exc:
-                if exc.status != 404:
-                    raise
+            campaigns = conn.execute('SELECT * FROM campaigns ORDER BY rowid DESC').fetchall()
+            result = []
+            for row in campaigns:
+                # For non-admin, check visibility: must have at least one visible finding
+                if actor.role != 'admin':
+                    visible = conn.execute('SELECT 1 FROM findings WHERE campaign_id=? AND reviewer_id=? LIMIT 1',
+                                           (row['id'], actor.id)).fetchone()
+                    if not visible:
+                        continue
+
+                # Compute summary counts without loading full finding payloads
+                if actor.role == 'admin':
+                    stats = conn.execute('''
+                        SELECT status, payload_json FROM findings WHERE campaign_id=?
+                    ''', (row['id'],)).fetchall()
+                else:
+                    stats = conn.execute('''
+                        SELECT status, payload_json FROM findings WHERE campaign_id=? AND reviewer_id=?
+                    ''', (row['id'], actor.id)).fetchall()
+
+                # Extract risk_level and status from payload_json
+                findings_data = [{'status': s['status'], **json.loads(s['payload_json'])} for s in stats]
+
+                warnings = self._quality(row)
+                result.append({
+                    'id': row['id'], 'name': row['name'], 'source': row['source'],
+                    'created_at': row['created_at'], 'warnings': warnings, 'actionable': not warnings,
+                    'superseded_by': row['superseded_by'], 'metadata': json.loads(row['metadata_json']),
+                    'summary': {
+                        'total': len(findings_data),
+                        'pending': sum(f['status'] == 'pending' for f in findings_data),
+                        'critical': sum(f.get('risk_level') == 'critical' for f in findings_data),
+                        'high': sum(f.get('risk_level') == 'high' for f in findings_data),
+                        'verified': sum(f['status'] == 'revoked_verified' for f in findings_data)
+                    }
+                })
         return {'campaigns': result}
 
     def get_finding(self, finding_id, actor):
@@ -257,7 +306,7 @@ class ReviewService:
             requested = {'certify': 'retain', 'revoke': 'remove', 'acknowledge': 'investigate'}[decision.action]
             if required and requested not in required:
                 raise ServiceError(422, 'hard_constraint', 'The requested decision conflicts with a non-discretionary policy constraint.')
-            if decision.action == 'certify' and finding['recommendation'] != 'certify' and not decision.acknowledge_risk:
+            if decision.action == 'certify' and (finding['recommendation'] != 'certify' or finding.get('mandatory_human_review')) and not decision.acknowledge_risk:
                 raise ServiceError(422, 'risk_acknowledgement', 'Acknowledge the recorded risk before certifying this access.')
             decision_id = 'decision:' + str(uuid4())
             request_id = 'revoke:' + str(uuid4()) if decision.action == 'revoke' else None
@@ -381,6 +430,8 @@ class ReviewService:
             return 'Verification scan does not completely cover the target capability.'
         if any(a.identity == request['identity'] and a.entitlement == request['entitlement'] for a in scan.assignments):
             return 'The capability still exists on the target account.'
+        if any(p.account_id == request['identity'] and p.entitlement_id == request['entitlement'] for p in scan.grant_paths):
+            return 'A grant path still carries the capability on the target account.'
         remaining_paths = {path.id for path in scan.grant_paths}
         if remaining_paths.intersection(request.get('grant_path_ids', ())):
             return 'An approved grant path still exists on the target account.'

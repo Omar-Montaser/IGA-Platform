@@ -79,7 +79,7 @@ provide connector tokens through the named environment variables, then run
 `iga-review serve`. Production identity-provider integration is intentionally
 not claimed by this prototype configuration.
 
-## Activate free-tier AI (Gemini)
+## Activate AI (Gemini or Groq)
 
 The default integration is **Gemini 3.8 Flash with high reasoning**, selected for
 strong reasoning and schema-constrained responses on a free API tier. This is
@@ -94,11 +94,18 @@ On Windows, install into a working environment first (Python 3.11+):
 # From governance-platform/access-review. Skip installation if already installed.
 python -m venv .venv-ai
 .\.venv-ai\Scripts\python.exe -m pip install -e ../hr-policy -e .
-.\setup_gemini.ps1
+.\setup_ai.ps1 -Provider gemini
 .\.venv-ai\Scripts\python.exe -m iga_review.cli demo --state-dir .demo-review/gemini
 ```
 
-The setup script prompts privately for a [Google AI Studio key](https://aistudio.google.com/api-keys),
+For Groq, use `./setup_ai.ps1 -Provider groq`; its default model is
+`llama-3.3-70b-versatile`, and its printed demo command uses `.demo-review/groq`.
+It uses JSON-object mode plus shared local validation, not unsupported strict
+JSON-schema mode. See [Groq output modes](https://console.groq.com/docs/structured-outputs).
+`setup_gemini.ps1` remains a compatibility entry point.
+
+The setup script prompts privately for a [Google AI Studio key](https://aistudio.google.com/api-keys)
+or [Groq key](https://console.groq.com/keys),
 keeps it only in the current PowerShell environment, and performs one real
 structured generation with synthetic evidence. It does not print/store the key,
 delete review history, or start a campaign automatically. Use `-Python <path>`
@@ -118,6 +125,8 @@ Manual configuration is also supported:
 
 - `IGA_AI_PROVIDER=gemini`, `GEMINI_API_KEY` (or `GOOGLE_API_KEY`).
 - `IGA_AI_MODEL=gemini-3.8-flash` (the pinned default; no paid model routing).
+- `IGA_AI_PROVIDER=groq`, `GROQ_API_KEY`, and optional `IGA_AI_MODEL`
+  (default `llama-3.3-70b-versatile`). Groq is explicitly selected, not auto-routed.
 - `IGA_AI_INTERVAL_SECONDS=6` controls pacing (0–60 seconds).
 - `iga-review ai-check` succeeds only after a validated AI response, not merely
   a successful authentication request. It returns nonzero on missing keys,
@@ -127,16 +136,19 @@ Manual configuration is also supported:
   disables external inference. The existing OpenAI adapter remains opt-in via
   `IGA_AI_PROVIDER=openai`, `OPENAI_API_KEY`, and `IGA_AI_MODEL`; it is not free.
 
-**Data handling:** the entire person-level case is sent to Google, including
+**Data handling:** the entire person-level case is sent to the selected provider, including
 identity/account data, justification, relevant roles/groups, history and
 exceptions. Free-tier data may be used to improve Google's products. Use
 synthetic data for this prototype. Non-demo startup requires explicit
 `IGA_AI_ALLOW_REAL_DATA=1` after obtaining data-owner approval; this flag is not
 an anonymization or compliance mechanism. `store=false` disables interaction
-retrieval storage, not Google's broader data-use terms. Keys never enter the UI,
+retrieval storage, not Google's broader data-use terms. Consent is also checked
+on each non-synthetic import, so demo mode/direct service calls cannot bypass it.
+The synthetic flag is a data-owner declaration, not automatic anonymization.
+Keys never enter the UI,
 campaign exports, or the review database.
 
-Existing campaigns are immutable assessments: enabling AI does **not** rewrite
+The application preserves existing campaign assessments: enabling AI does **not** rewrite
 their rules-only results. Use a new child directory under `.demo-review/` for a
 new synthetic campaign, or import a genuinely fresh normalized scan. The UI
 shows actual persisted provider/model/fallback information, not just the current
@@ -161,11 +173,32 @@ The exact schemas, response shapes, state machine, and security boundaries are
 in [contract.md](docs/contract.md). Design research is in
 [research.md](docs/research.md).
 
+## Verified outcomes — 2026-09-23
+
+- 133 Module 4 tests passed; provider calls are mocked.
+- All 67 Module 1 tests passed, including generated-fixture reproducibility.
+- 14 offline connector tests passed, including real localhost HTTP and
+  authenticated campaign import/export with all 367 captured assignments.
+- 3 JavaScript runtime tests passed using a DOM stub, not a real browser.
+  JavaScript and PowerShell setup-script syntax checks passed.
+- Live `ai-check`: **not configured**, nonzero exit and explicit rules fallback.
+  No live model review or AI accuracy score is claimed.
+
+The service now enforces ownership blockers and hard-policy actions. Mandatory
+review requires risk acknowledgement even when AI recommends retain. Each AI
+item assessment must cite its own item reference. Unknown grant dates/group
+privilege remain null; missing evidence is independently flagged and displayed
+beside item-level source evidence. Orphan/cyclic paths are rejected and removal
+verification checks all remaining target paths. Session cleanup and HTML
+attribute escaping were hardened. Existing review history was not deleted.
+
+See the [root README](../../README.md) for reproducible commands and scope.
+
 ## Intentionally left for follow-on work
 
 - Integration with the organization's identity provider and user lifecycle.
-- A deployed Module 3 connector. The normalized v2 consumer contract and a
-  stable synthetic fixture exist; live source discovery does not.
+- Deployment/revalidation of the implemented Module 3 connector against an
+  authorized real target. Captures and local HTTP are tested; live SSH/RSA is not.
 - Background worker supervision, production database choice, backups,
   deployment manifests, metrics, rate limiting, and operational alerting.
 - Live model evaluation using an authorized project key and labeled review cases
@@ -174,6 +207,6 @@ in [contract.md](docs/contract.md). Design research is in
   accessibility attributes, JavaScript security patterns, and API integration
   without requiring a browser runtime).
 
-These items must not be represented as completed by the simulated connector or
-mocked tests. The continuation prompt supplied with this implementation defines
-the next core milestones and acceptance gates.
+These items must not be represented as completed by simulated connectors or
+mocked tests. Editable installation is the tested UI deployment; packaged-wheel
+static assets and production deployment need separate acceptance work.

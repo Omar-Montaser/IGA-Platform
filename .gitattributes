@@ -1,0 +1,2 @@
+# Generated fixtures have an exact-byte reproducibility contract on all hosts.
+governance-platform/hr-policy/data/*.json text eol=lf

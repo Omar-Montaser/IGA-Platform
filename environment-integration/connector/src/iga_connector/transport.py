@@ -99,12 +99,22 @@ class FixtureTransport:
 
     def run(self, args):
         if args[:2] == ["getent", "passwd"]:
-            return 0, open(os.path.join(self.dir, "passwd")).read(), ""
+            with open(os.path.join(self.dir, "passwd"), encoding='utf-8') as stream:
+                data = stream.read()
+            if len(args) == 3:
+                rows = [row for row in data.splitlines() if len(row.split(':')) == 7 and
+                        (row.split(':')[0] == args[2] or row.split(':')[2] == args[2])]
+                return (0, '\n'.join(rows) + '\n', '') if rows else (2, '', '')
+            return 0, data, ""
         if args[:2] == ["getent", "group"]:
-            return 0, open(os.path.join(self.dir, "group")).read(), ""
+            with open(os.path.join(self.dir, "group"), encoding='utf-8') as stream:
+                return 0, stream.read(), ""
         if args[-1] == "sudo" and "iga-inspect" in " ".join(args):
             path = os.path.join(self.dir, "sudoers_dropins.json")
-            return 0, (open(path).read() if os.path.isfile(path) else "{}"), ""
+            if not os.path.isfile(path):
+                return 1, '', 'Missing sudo capture; discovery is incomplete.'
+            with open(path, encoding='utf-8') as stream:
+                return 0, stream.read(), ''
         # A fixture is read-only by construction: it can never change a system.
         return 1, json.dumps({"ok": False, "error": "fixture_is_read_only"}), ""
 
@@ -117,7 +127,7 @@ class FixtureTransport:
 
 def from_env(env=None):
     """Build the configured transport. IGA_TRANSPORT selects ssh|local|fixture."""
-    env = env or os.environ
+    env = os.environ if env is None else env
     kind = env.get("IGA_TRANSPORT", "local").lower()
     if kind == "ssh":
         host = env.get("IGA_SSH_HOST")

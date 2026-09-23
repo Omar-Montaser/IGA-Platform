@@ -259,12 +259,15 @@ def classify(account, eid, policy_index, status_index, catalog):
     if pol is None:
         return "unknown_entitlement", False
     if eid in pol["restricted"]:
-        privileged = bool(catalog.get(eid, {}).get("privileged"))
-        return ("unauthorized_privilege" if privileged else "restricted"), False
+        return "restricted", False
     if eid in pol["expected"]:
         return "expected", True
     if eid in pol["privileged"]:
         return "permitted_privileged", True
+    if eid not in catalog:
+        return "unknown_entitlement", False
+    if catalog[eid]['privileged']:
+        return "unauthorized_privilege", False
     return "unlisted", False
 
 
@@ -292,7 +295,8 @@ for fn in sorted(os.listdir(D)):
             out[fn[len(P):]] = [l.strip() for l in fh
                                 if l.strip() and not l.startswith("#")]
     except OSError as e:
-        out[fn[len(P):]] = ["<unreadable: %s>" % e]
+        print("Incomplete sudo inspection", file=sys.stderr)
+        sys.exit(1)
 print(json.dumps(out, indent=2))
 '''
 

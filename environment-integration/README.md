@@ -5,8 +5,8 @@ normalization, and approved remediation against it).
 
 | Module | Scope | Status |
 | --- | --- | --- |
-| 2 | Linux IAM environment seeded from the Module 1 bundle | Implemented: seeder, native mapping, derived ground truth, reset. |
-| 3 | Discovery, normalization, remediation service | Implemented: agentless SSH connector, FastAPI service, idempotent revocation, scan schema v2.0.0, 59 tests on all three transports. |
+| 2 | Linux IAM environment seeded from the Module 1 bundle | Implemented; pure planning/classification checked against Module 4. Native seeding/reset not run in this audit. |
+| 3 | Discovery, normalization, remediation service | Implemented; 14 offline audit tests cover captured discovery, strict requests, read-only remediation and localhost HTTP. Live SSH/local target operations not run in this audit. |
 
 ## Layout
 
@@ -21,7 +21,7 @@ environment-integration/
       normalize.py    the boundary - generic objects out
       remediation.py  approved removal via the guarded helper
       api.py          POST /scans, POST /revocations
-    tests/          59 assertions against the live lab
+    tests/          offline audit tests and an opt-in live lab script
     README.md
   samples/          captured raw system state (committed, for offline parser work)
 ```
@@ -41,18 +41,22 @@ Current dataset (`access-review-demo-2026-09-21`): 67 accounts, 22 POSIX groups,
 | Expected policy result | Count |
 | --- | --- |
 | `lifecycle_restricted` | 34 |
-| `unauthorized_privilege` | 5 |
 | `unlisted` | 5 |
-| `restricted` | 4 |
+| `restricted` | 9 |
 
-Those four values are taken from Module 4's `policy_result` vocabulary, so the
-accuracy comparison at the end is a direct field match, not a translation.
+These values are taken from Module 4's `policy_result` vocabulary. The audit
+checks all 367 assignment classifications against Module 4, including 319
+expected assignments. Five explicitly restricted privileged grants were
+previously mislabeled `unauthorized_privilege` in the lab classifier; explicit
+restriction now takes precedence. Existing target-side ground-truth files have
+not been regenerated. This is deterministic policy agreement, not AI accuracy.
 
 ## The native mapping is the architectural boundary
 
-Generic entitlement IDs (`ent:finance:invoices-read`) never appear on the target
-system. The box has POSIX groups and sudoers drop-in files. `entitlement_map.json`
-is that translation table, and Module 3 owns it.
+Generic entitlement IDs (`ent:finance:invoices-read`) are not native group names.
+They may appear in mapping artifacts and comments; native access is represented
+by POSIX groups and sudoers drop-in files. `entitlement_map.json` is the
+translation table, and Module 3 owns it.
 
 ```
 ent:finance:invoices-read     ->  posix_group  finance_invoices_read
@@ -124,9 +128,10 @@ connector now emits all nine required collections:
 | `exceptions` | Empty. The target records no approved exceptions. |
 | `history` | Empty. The target records no grant history. |
 
-Every line that had to change was in `normalize.py`. `transport.py` and
-`discovery.py` were untouched, which is the generic-core claim holding up under
-a real contract change rather than being asserted in a README.
+The normalizer owns the generic output shape. This audit also tightened
+discovery and transport behavior: malformed or partial reads must fail rather
+than produce a falsely complete scan. Unknown grant timestamps and group
+privilege are emitted as `null`, not fabricated from file times or defaults.
 
 Their model sets `extra='forbid'` and `strict=True`, so three rules apply:
 unknown fields are rejected, nothing is coerced (`enabled` must be a real

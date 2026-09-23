@@ -118,7 +118,7 @@ class Group(Record):
     id: str
     name: str
     application_id: str
-    privileged: bool
+    privileged: bool | None
     source: str
 
 
@@ -185,7 +185,7 @@ class Assignment(Record):
     identity: str
     entitlement: str
     source: str
-    timestamp: str
+    timestamp: str | None
     grant_path_ids: list[str] = Field(min_length=1)
     business_justification: str | None
     exception_id: str | None
@@ -193,7 +193,8 @@ class Assignment(Record):
     @field_validator('timestamp')
     @classmethod
     def valid_time(cls, value):
-        instant(value)
+        if value is not None:
+            instant(value)
         return value
 
 
@@ -265,10 +266,14 @@ class Scan(Record):
                 raise ValueError('Direct paths contain no intermediate role or group')
             if any(node.ref not in node_sets[node.kind] for node in path.path):
                 raise ValueError('Grant path contains an unknown node reference')
+            if any(node.kind in ('account', 'entitlement') for node in path.path[1:-1]):
+                raise ValueError('Intermediate grant nodes must be roles or groups')
+            if len({(node.kind, node.ref) for node in path.path}) != len(path.path):
+                raise ValueError('Grant paths cannot contain cycles')
         for item in self.assignments:
             if item.identity not in accounts or item.entitlement not in entitlements:
                 raise ValueError('Assignment references an unknown account or entitlement')
-            if instant(item.timestamp) > time:
+            if item.timestamp is not None and instant(item.timestamp) > time:
                 raise ValueError('Assignment timestamp is after scan time')
             if len(set(item.grant_path_ids)) != len(item.grant_path_ids):
                 raise ValueError('Assignment grant paths must be unique')
@@ -280,6 +285,9 @@ class Scan(Record):
                 exception = exceptions.get(item.exception_id)
                 if exception is None or (exception.account_id, exception.entitlement_id) != (item.identity, item.entitlement):
                     raise ValueError('Assignment references a mismatched exception')
+        referenced_paths = {path_id for item in self.assignments for path_id in item.grant_path_ids}
+        if referenced_paths != set(paths):
+            raise ValueError('Every observed grant path must be represented by an assignment')
         for exception in self.exceptions:
             if exception.account_id not in accounts or exception.entitlement_id not in entitlements:
                 raise ValueError('Exception references an unknown account or entitlement')

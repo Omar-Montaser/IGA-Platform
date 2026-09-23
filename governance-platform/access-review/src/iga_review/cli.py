@@ -53,7 +53,8 @@ def load_service(directory):
         raise ValueError('External AI sends identity evidence to the provider. Obtain data-owner approval, '
                          'then explicitly set IGA_AI_ALLOW_REAL_DATA=1, or use IGA_AI_PROVIDER=rules.')
     return ReviewService(directory / 'reviews.sqlite3', users, fallback_reviewer_id=config['fallback_reviewer_id'],
-                         connectors=connectors, explainer=explainer, demo=config['demo'])
+                         connectors=connectors, explainer=explainer, demo=config['demo'],
+                         allow_external_ai_data=os.environ.get('IGA_AI_ALLOW_REAL_DATA') == '1')
 
 
 def main(argv=None):
@@ -98,6 +99,7 @@ def main(argv=None):
             print(f'Initialized. Reviewer credential: {directory / "reviewer-token.txt"}')
             return 0
         if args.command == 'demo' and not (directory / 'config.json').exists():
+            configured_reviewer()  # Fail bad AI configuration before creating state.
             # Validate all input and generate the fixture before creating credentials.
             payload = build_demo(strict_json(args.identities.read_text()), strict_json(args.policies.read_text()), utcnow())
             initialize(directory, demo=True)

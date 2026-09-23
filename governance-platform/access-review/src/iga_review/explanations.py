@@ -19,7 +19,10 @@ _INSTRUCTIONS = (
     'do not assume a policy fact is a requested answer. You may disagree, but '
     'explicitly identify evidence and questions supporting that disagreement. '
     'Never claim an approval, removal, or other action occurred. Return only the '
-    'requested structured object.'
+    'requested structured object. Unknown values and evidence_gaps are limitations, '
+    'not evidence of absence. Do not infer usage, grant age or valid exception '
+    'approval from scan time, peer prevalence or a justification alone. '
+    'Each item assessment must cite its own item:<key> reference.'
 )
 
 
@@ -107,7 +110,7 @@ class StructuredReviewer:
                 or self._api_key != self._api_key.strip()
                 or any(unicodedata.category(c).startswith('C') for c in self._api_key)
                 or not isinstance(self.model, str)
-                or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,199}', self.model)):
+                or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}', self.model)):
             return self._fallback(case, 'not_configured')
         try:
             item_keys = [item['key'] for item in case['items']]
@@ -181,6 +184,7 @@ class StructuredReviewer:
                     raise _InvalidReview('invalid_response')
                 if (not isinstance(assessment['evidence_refs'], list)
                         or not assessment['evidence_refs']
+                        or f'item:{assessment["item_key"]}' not in assessment['evidence_refs']
                         or not set(assessment['evidence_refs']) <= set(refs)
                         or not all(_text(x) for x in assessment['evidence_refs'])
                         or not _text(assessment['reasoning'])):
@@ -231,11 +235,17 @@ class OpenAIReviewer(StructuredReviewer):
         return texts[0]
 
     def _request(self, client, payload):
-        response = client.post(_ENDPOINT, json=payload,
+        with client.stream('POST', _ENDPOINT, json=payload,
                                headers={'Authorization': f'Bearer {self._api_key}'},
-                               timeout=_TIMEOUT, follow_redirects=False)
-        response.raise_for_status()
-        return response
+                               timeout=_TIMEOUT, follow_redirects=False) as response:
+            response.raise_for_status()
+            parts, size = [], 0
+            for part in response.iter_bytes(chunk_size=8192):
+                size += len(part)
+                if size > _MAX_RESPONSE_BYTES:
+                    raise ValueError('response_too_large')
+                parts.append(part)
+            return httpx.Response(response.status_code, content=b''.join(parts))
 
 
 # Compatibility imports for callers while the public API migrates to review().
