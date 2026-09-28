@@ -3,21 +3,9 @@
 An evidence-led access review platform.
 
 It combines HR context, observed environment access and human decisions in one
-auditable workflow:
+auditable platform.
 
-```text
-HR and policy data
-        ↓
-Environment scan
-        ↓
-Policy evaluation
-        ↓
-Access review campaign
-        ↓
-Human decision
-        ↓
-Remediation and fresh-scan verification
-```
+[![IGA Platform architecture, left to right: environment, connector, review backend, and reviewer UI. HR and policy inputs, optional AI review, and SQLite storage support the backend from below.](docs/images/architecture.png)](docs/images/architecture.svg)
 
 The current product is centered on environment-first access reviews. An admin
 can see configured sources before a campaign exists, start a durable run, follow

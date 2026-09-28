@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">IGA Platform architecture</title>
+  <desc id="desc">From left to right: the environment supplies observed access to the connector, which normalizes evidence for the review backend. The backend evaluates policy and presents findings in the browser UI. Human decisions return through the backend and connector for approved changes, followed by fresh-scan verification. Below the backend are HR and policy inputs, optional advisory AI, and SQLite persistence.</desc>
+  <defs>
+    <style>
+      text { font-family: 'Segoe UI', Arial, sans-serif; }
+      .title { font-size: 32px; font-weight: 650; fill: #f4f5f7; }
+      .subtitle { font-size: 19px; fill: #a7afbd; }
+      .tag { font-size: 14px; font-weight: 700; letter-spacing: 1.5px; }
+      .name { font-size: 23px; font-weight: 600; fill: #f1f3f7; }
+      .body { font-size: 18px; fill: #bec5d1; }
+      .label { font-size: 15px; fill: #c2cad6; }
+      .wire { fill: none; stroke: #8c9aa9; stroke-width: 1.8; stroke-linejoin: round; }
+      .return { fill: none; stroke: #d28b94; stroke-width: 1.8; stroke-linejoin: round; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#8c9aa9" stroke-width="1.6"/></marker>
+    <marker id="red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#d28b94" stroke-width="1.6"/></marker>
+  </defs>
+  <rect width="1600" height="900" rx="18" fill="#111419"/>
+  <rect x="48" y="43" width="5" height="46" rx="2" fill="#e15661"/>
+  <text x="72" y="65" class="title">IGA Platform</text>
+  <text x="72" y="96" class="subtitle">Environment discovery, access review and verified remediation</text>
+  <path d="M48 126 H1552" stroke="#2b323d"/>
+
+  <!-- Main architecture reads from source to presentation. -->
+  <rect x="48" y="190" width="240" height="330" rx="12" fill="#192b2a" stroke="#4c847c" stroke-width="1.5"/>
+  <text x="72" y="225" class="tag" fill="#87cfc0">01 / ENVIRONMENT</text>
+  <g fill="none" stroke="#87cfc0" stroke-width="1.8"><rect x="72" y="254" width="45" height="24" rx="4"/><rect x="72" y="287" width="45" height="24" rx="4"/><path d="M80 266 H96 M80 299 H96"/><circle cx="108" cy="266" r="1.5"/><circle cx="108" cy="299" r="1.5"/></g>
+  <text x="72" y="353" class="name">Linux IAM lab</text>
+  <text x="72" y="390" class="body">Users &amp; groups</text>
+  <text x="72" y="420" class="body">Accounts &amp; grants</text>
+  <path d="M72 448 H264" stroke="#36544e"/>
+  <text x="72" y="478" class="label">Observed source access</text>
+
+  <rect x="380" y="190" width="250" height="330" rx="12" fill="#202735" stroke="#58769e" stroke-width="1.5"/>
+  <text x="404" y="225" class="tag" fill="#9dbbe4">02 / CONNECTOR</text>
+  <text x="404" y="274" class="name">Discovery adapter</text>
+  <rect x="404" y="302" width="202" height="62" rx="7" fill="#171e29" stroke="#3b4c64"/>
+  <text x="505" y="339" text-anchor="middle" class="body">Scan &amp; normalize</text>
+  <rect x="404" y="381" width="202" height="62" rx="7" fill="#171e29" stroke="#3b4c64"/>
+  <text x="505" y="418" text-anchor="middle" class="body">Apply approved change</text>
+  <text x="404" y="478" class="label">Mapping &amp; exact grant paths</text>
+
+  <rect x="725" y="190" width="450" height="330" rx="12" fill="#2b1e25" stroke="#a35b68" stroke-width="1.5"/>
+  <text x="749" y="225" class="tag" fill="#efa0ac">03 / REVIEW BACKEND</text>
+  <text x="1151" y="225" text-anchor="end" class="label">Python · FastAPI</text>
+  <rect x="749" y="250" width="402" height="66" rx="7" fill="#1d1920" stroke="#59414d"/>
+  <text x="769" y="277" class="name">Campaign orchestration</text>
+  <text x="769" y="302" class="label">Durable runs · Pinned evidence · Recovery</text>
+  <rect x="749" y="331" width="402" height="66" rx="7" fill="#1d1920" stroke="#59414d"/>
+  <text x="769" y="358" class="name">Policy evaluation &amp; findings</text>
+  <text x="769" y="383" class="label">Constraints · Risk signals · Review context</text>
+  <rect x="749" y="412" width="402" height="66" rx="7" fill="#1d1920" stroke="#59414d"/>
+  <text x="769" y="439" class="name">Decisions &amp; remediation</text>
+  <text x="769" y="464" class="label">Human approval · Queue · Fresh-scan verification</text>
+  <text x="950" y="504" text-anchor="middle" class="label">Authenticated API · Authorized actions</text>
+
+  <rect x="1268" y="190" width="284" height="330" rx="12" fill="#25272d" stroke="#747c8c" stroke-width="1.5"/>
+  <text x="1292" y="225" class="tag" fill="#cbd1dc">04 / REVIEWER UI</text>
+  <g fill="none" stroke="#b3bccb" stroke-width="1.8"><rect x="1292" y="250" width="64" height="43" rx="4"/><path d="M1292 261 H1356 M1301 270 H1313 V285 H1301 Z M1320 272 H1347 M1320 281 H1342"/></g>
+  <text x="1292" y="330" class="name">Review workspace</text>
+  <text x="1292" y="367" class="body">Inventory &amp; run progress</text>
+  <text x="1292" y="397" class="body">Findings &amp; evidence</text>
+  <text x="1292" y="427" class="body">Human review decisions</text>
+  <text x="1292" y="478" class="label">Browser · HTML / CSS / JS</text>
+
+  <!-- Evidence and results travel right; human-approved actions return left. -->
+  <path d="M288 320 H380" class="wire" marker-end="url(#arrow)"/>
+  <text x="334" y="280" text-anchor="middle" class="label">Observed</text><text x="334" y="300" text-anchor="middle" class="label">access</text>
+  <path d="M630 320 H725" class="wire" marker-end="url(#arrow)"/>
+  <text x="678" y="280" text-anchor="middle" class="label">Normalized</text><text x="678" y="300" text-anchor="middle" class="label">evidence</text>
+  <path d="M1175 320 H1268" class="wire" marker-end="url(#arrow)"/>
+  <text x="1222" y="280" text-anchor="middle" class="label">Findings</text><text x="1222" y="300" text-anchor="middle" class="label">&amp; status</text>
+  <path d="M380 425 H288" class="return" marker-end="url(#red)"/>
+  <text x="334" y="453" text-anchor="middle" class="label">Access</text><text x="334" y="473" text-anchor="middle" class="label">changes</text>
+  <path d="M725 425 H630" class="return" marker-end="url(#red)"/>
+  <text x="678" y="453" text-anchor="middle" class="label">Approved</text><text x="678" y="473" text-anchor="middle" class="label">removal</text>
+  <path d="M1268 425 H1175" class="return" marker-end="url(#red)"/>
+  <text x="1222" y="453" text-anchor="middle" class="label">Human</text><text x="1222" y="473" text-anchor="middle" class="label">decisions</text>
+
+  <!-- Supporting components connect below the backend, leaving the main path clear. -->
+  <path d="M680 660 V584 H790 V520" class="wire" marker-end="url(#arrow)"/>
+  <text x="686" y="610" class="label">Identity &amp; policy context</text>
+  <path d="M1030 660 V584 H950 V520" class="wire" stroke-dasharray="6 5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="1047" y="610" class="label">Case / assessment</text>
+  <path d="M1391 660 V562 H1110 V520" class="wire" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="1408" y="603" class="label">Persist /</text><text x="1408" y="624" class="label">recover</text>
+
+  <rect x="520" y="660" width="310" height="170" rx="12" fill="#29261d" stroke="#897a4e" stroke-width="1.5"/>
+  <text x="544" y="694" class="tag" fill="#dfc889">HR &amp; POLICY INPUTS</text>
+  <text x="544" y="729" class="name">Identity context</text>
+  <text x="544" y="761" class="body">Lifecycle · Roles · Policies</text>
+  <text x="544" y="791" class="body">Explicit account correlations</text>
+
+  <rect x="870" y="660" width="320" height="170" rx="12" fill="#261f32" stroke="#8666a0" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <text x="894" y="694" class="tag" fill="#c8a7e4">OPTIONAL AI REVIEW</text>
+  <text x="894" y="729" class="name">Provider adapters</text>
+  <text x="894" y="761" class="body">Advisory case assessments</text>
+  <text x="894" y="791" class="body">Rules fallback when needed</text>
+
+  <rect x="1230" y="660" width="322" height="170" rx="12" fill="#1e2922" stroke="#5c8167" stroke-width="1.5"/>
+  <text x="1254" y="694" class="tag" fill="#9ec5a8">SQLITE STORAGE</text>
+  <text x="1254" y="729" class="name">Evidence &amp; audit</text>
+  <text x="1254" y="761" class="body">Runs · Snapshots · Decisions</text>
+  <text x="1254" y="791" class="body">Requests · Audit history</text>
+
+  <path d="M48 677 H88" class="wire" marker-end="url(#arrow)"/><text x="103" y="683" class="label">Evidence, results &amp; supporting data</text>
+  <path d="M88 712 H48" class="return" marker-end="url(#red)"/><text x="103" y="718" class="label">Human-approved remediation</text>
+  <text x="48" y="767" class="label">Demo uses a simulated environment.</text>
+  <text x="48" y="793" class="label">Live discovery uses local / SSH transport.</text>
+  <text x="48" y="867" class="label">Removal is verified only after a new, complete scan confirms that access is gone.</text>
+</svg>
