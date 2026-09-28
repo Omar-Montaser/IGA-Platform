@@ -46,6 +46,18 @@ class Case(unittest.TestCase):
     def process(self):return self.service.process(self.campaign['id'],self.admin)['processed']
 
 class WorkflowTests(Case):
+    def test_campaign_list_counters_match_scoped_detail_before_and_after_remediation(self):
+        for processed in (False, True):
+            if processed:
+                self.decide()
+                self.assertEqual(self.process()[0]['state'], 'verified')
+            for actor in (self.admin, self.manager):
+                with self.subTest(processed=processed, actor=actor.id):
+                    listed = self.service.list_campaigns(actor)['campaigns'][0]
+                    detail = self.service.get_campaign(self.campaign['id'], actor)
+                    self.assertEqual(listed['summary'], detail['summary'])
+            self.assertEqual(self.service.list_campaigns(self.outsider)['campaigns'], [])
+
     def test_inputs_digests_and_empty_decision_history(self):
         data=self.export();self.assertEqual(data['inputs'],self.payload)
         expected=hashlib.sha256(json.dumps(self.payload['scan'],sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()

@@ -62,6 +62,69 @@ const environment = (run = null) => ({ sources: [{ source: 'test', name: 'Test e
     status: run?.state || 'never_scanned', inventory: null, can_start: !run, setup_error: null, run, latest_campaign: null }] });
 const response = data => ({ ok: true, headers: { get: () => 'application/json' }, json: async () => data });
 
+test('a verified removal cannot hide another failed or pending remediation', () => {
+    const ui = app();
+    for (const status of ['revoke_failed', 'verification_failed', 'revoke_queued', 'verification_pending']) {
+        const result = ui.run(`reviewProgress([{status:'revoked_verified'},{status:${JSON.stringify(status)}}])`);
+        assert.notEqual(result.title, 'Review complete');
+        assert.equal(result.stage, 3);
+        assert.equal(result.completed, 2);
+    }
+});
+
+test('all certified or acknowledged findings complete a review without claiming removals', () => {
+    const ui = app();
+    const result = ui.run(`reviewProgress([{status:'certified'},{status:'acknowledged'}])`);
+    assert.equal(result.title, 'Review complete');
+    assert.equal(result.verificationDetail, 'No removals requested');
+    assert.equal(result.stage, 4);
+    assert.notEqual(ui.run('reviewProgress([]).title'), 'Review complete');
+});
+
+test('pending decisions keep the human stage active even after some removals verify', () => {
+    const ui = app();
+    const result = ui.run(`reviewProgress([{status:'pending'},{status:'revoked_verified'}])`);
+    assert.equal(result.title, 'Pending decisions');
+    assert.equal(result.stage, 2);
+    assert.equal(result.completed, 1);
+});
+
+test('pending remediation refreshes to a verified result and stops polling', async () => {
+    const finding = { id:'item:one', campaign_id:'review:one', status:'revoked_verified', version:4 };
+    const ui = app(url => Promise.resolve(response(url.includes('/api/findings/') ? finding : {id:'review:one', findings:[finding]})));
+    ui.run(`state.user={role:'admin'}; state.activeView='campaign-detail-view';
+        state.currentFinding={id:'item:one',campaign_id:'review:one',status:'verification_pending',version:3};
+        renderCampaignDetail=()=>{}; renderFindingDetail=()=>{}; startRemediationPolling();`);
+    assert.equal(ui.timers.size, 1);
+    await ui.run('pollRemediation()');
+    assert.equal(ui.run('state.currentFinding.status'), 'revoked_verified');
+    assert.equal(ui.timers.size, 0);
+});
+
+test('remediation polling never overlaps and a late response cannot replace another selected finding', async () => {
+    let deliver, calls = 0;
+    const ui = app(() => { calls++; return new Promise(resolve => { deliver=resolve; }); });
+    ui.run(`state.user={role:'admin'}; state.activeView='campaign-detail-view';
+        state.currentFinding={id:'item:one',status:'verification_pending',version:3}; startRemediationPolling();`);
+    const first = ui.run('pollRemediation()');
+    await ui.run('pollRemediation()');
+    assert.equal(calls, 1);
+    ui.run(`stopRemediationPolling(); state.currentFinding={id:'item:two',status:'pending',version:1};`);
+    deliver(response({id:'item:one',status:'revoked_verified',version:4}));
+    await first;
+    assert.equal(ui.run('state.currentFinding.id'), 'item:two');
+    assert.equal(calls, 1);
+    assert.equal(ui.timers.size, 0);
+});
+
+test('leaving the workspace or signing out stops remediation polling', () => {
+    const ui = app();
+    ui.run(`state.currentFinding={status:'verification_pending'}; startRemediationPolling(); showView('audit-view');`);
+    assert.equal(ui.timers.size, 0);
+    ui.run(`startRemediationPolling(); logout();`);
+    assert.equal(ui.timers.size, 0);
+});
+
 test('unchanged polling preserves the form DOM and typed campaign name', () => {
     const ui = app();
     const container = ui.document.getElementById('environment-content');

@@ -88,15 +88,21 @@ class Store:
         with closing(self.connect()) as conn:
             conn.execute('PRAGMA journal_mode=WAL')
             conn.executescript(SCHEMA)
-            version = conn.execute('SELECT version FROM meta').fetchone()[0]
-            if version == 1:
-                conn.execute('UPDATE meta SET version=2')
-                version = 2
-            if version == 2:
-                conn.execute('UPDATE meta SET version=3')
-                version = 3
-            if version != 3:
-                raise ValueError('Unsupported database schema version')
+            # Serialize additive upgrades across server/worker startup.
+            conn.execute('BEGIN IMMEDIATE')
+            try:
+                version = conn.execute('SELECT version FROM meta').fetchone()[0]
+                if version not in (1, 2, 3, 4):
+                    raise ValueError('Unsupported database schema version')
+                if version < 4:
+                    columns = {row['name'] for row in conn.execute('PRAGMA table_info(requests)')}
+                    if 'lease_token' not in columns:
+                        conn.execute('ALTER TABLE requests ADD COLUMN lease_token TEXT')
+                    conn.execute('UPDATE meta SET version=4')
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
 
     def connect(self):
         conn = sqlite3.connect(self.path, timeout=10, isolation_level=None)

@@ -241,7 +241,7 @@ class RunTests(unittest.TestCase):
         after = self.service.export(campaign['id'], self.admin)
         self.assertEqual(before, after)
         with self.service.store.read() as conn:
-            self.assertEqual(conn.execute('SELECT version FROM meta').fetchone()[0], 3)
+            self.assertEqual(conn.execute('SELECT version FROM meta').fetchone()[0], 4)
 
     def test_pinned_inputs_and_inventory_are_immutable(self):
         run = self.run_job()

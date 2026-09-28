@@ -247,6 +247,7 @@ function logout(message = null) {
     decisionRequests.clear();
     document.getElementById('toast').classList.add('hidden');
     stopEnvironmentPolling();
+    stopRemediationPolling();
     state.token = null;
     state.user = null;
     state.campaigns = [];
@@ -279,6 +280,8 @@ function logout(message = null) {
 
 // Navigation
 function showView(viewId) {
+    state.activeView = viewId;
+    if (viewId !== 'campaign-detail-view') stopRemediationPolling();
     const location = { 'campaigns-view': 'Access reviews', 'campaign-detail-view': 'Review workspace', 'environment-view': 'Environment', 'audit-view': 'Audit trail' };
     document.getElementById('page-location').textContent = location[viewId] || 'Access reviews';
     if (viewId !== 'environment-view') stopEnvironmentPolling();
@@ -348,6 +351,7 @@ function renderCampaigns() {
 
 // Campaign detail
 async function loadCampaign(campaignId) {
+    stopRemediationPolling();
     try {
         showLoading();
         clearError('campaign-detail-error');
@@ -457,21 +461,37 @@ function renderCampaignDetail() {
             <div class="label">Verified</div>
         </div>
     `;
-    const total = campaign.summary.total || 0;
-    const pending = campaign.summary.pending || 0;
-    const verified = campaign.summary.verified || 0;
-    const completed = Math.max(0, total - pending);
-    const journey = pending ? 1 : verified ? 3 : 2;
+    const progress = reviewProgress(campaign.findings);
+    const { total, pending, completed } = progress;
+    const journey = progress.stage;
     const journeyStages = [
-        ['evidence', 'Evidence captured', 'Latest source scan'],
+        ['evidence', 'Evidence captured', 'Campaign source snapshot'],
         ['review', 'Findings ready', `${total} access findings`],
         ['decisions', 'Human decisions', pending ? `${pending} still pending` : `${completed} decisions recorded`],
-        ['verify', 'Verified outcome', verified ? `${verified} removals verified` : 'Follows approved changes']
+        ['verify', 'Verified outcome', progress.verificationDetail]
     ];
-    document.getElementById('review-journey').innerHTML = `<div class="journey-heading"><div><p class="eyebrow">REVIEW STATUS</p><h3>${pending ? 'Pending decisions' : verified ? 'Review complete' : 'Ready for decisions'}</h3></div><span class="journey-progress">${completed} / ${total} decisions</span></div><div class="journey-rail">${journeyStages.map(([key, label, detail], index) => { const state = index < journey ? 'complete' : index === journey ? 'current' : 'pending'; return `<div class="journey-stage ${state}"><span class="journey-marker">${state === 'complete' ? '✓' : index + 1}</span><div><strong>${label}</strong><small>${detail}</small></div></div>${index < journeyStages.length - 1 ? '<span class="journey-connector" aria-hidden="true"></span>' : ''}`; }).join('')}</div>`;
+    document.getElementById('review-journey').innerHTML = `<div class="journey-heading"><div><p class="eyebrow">REVIEW STATUS</p><h3>${progress.title}</h3></div><span class="journey-progress">${completed} / ${total} decisions</span></div><div class="journey-rail">${journeyStages.map(([key, label, detail], index) => { const state = index < journey ? 'complete' : index === journey ? 'current' : 'pending'; return `<div class="journey-stage ${state}"><span class="journey-marker">${state === 'complete' ? '✓' : index + 1}</span><div><strong>${label}</strong><small>${detail}</small></div></div>${index < journeyStages.length - 1 ? '<span class="journey-connector" aria-hidden="true"></span>' : ''}`; }).join('')}</div>`;
     
     // Findings
     applyFilters();
+}
+
+function reviewProgress(findings) {
+    const count = statuses => findings.filter(f => statuses.includes(f.status)).length;
+    const total = findings.length;
+    const pending = count(['pending']);
+    const verified = count(['revoked_verified']);
+    const failed = count(['revoke_failed', 'verification_failed']);
+    const processing = count(['revoke_queued', 'verification_pending']);
+    const complete = total > 0 && count(['certified', 'acknowledged', 'revoked_verified']) === total;
+    const title = failed ? 'Remediation needs attention' : pending ? 'Pending decisions'
+        : processing ? 'Remediation in progress' : complete ? 'Review complete' : 'No decisions to review';
+    const verificationDetail = failed ? `${failed} removals need attention`
+        : processing ? `${processing} removals awaiting verification`
+        : verified ? `${verified} removals verified`
+        : complete ? 'No removals requested' : 'Follows approved changes';
+    return { total, pending, verified, completed: total - pending, title, verificationDetail,
+        stage: complete ? 4 : pending ? 2 : 3 };
 }
 
 function applyFilters() {
@@ -507,6 +527,7 @@ function saveDecisionDraft() {
 }
 
 async function loadFinding(findingId) {
+    stopRemediationPolling();
     saveDecisionDraft();
     const request = ++state.findingRequest;
     const session = state.sessionVersion;
@@ -519,10 +540,58 @@ async function loadFinding(findingId) {
         state.currentFinding = finding;
         renderFindingDetail();
         renderFindings();
+        startRemediationPolling();
     } catch (error) {
         if (request === state.findingRequest && session === state.sessionVersion) showError('finding-error', error.message || 'Unable to load finding');
     } finally {
         if (request === state.findingRequest) document.getElementById('review-panel').setAttribute('aria-busy', 'false');
+    }
+}
+
+let remediationTimer = null;
+let remediationEpoch = 0;
+let remediationRequest = null;
+const pendingRemediationStates = ['revoke_queued', 'verification_pending'];
+
+function stopRemediationPolling() {
+    if (remediationTimer !== null) clearInterval(remediationTimer);
+    remediationTimer = null;
+    remediationRequest = null;
+    remediationEpoch += 1;
+}
+
+function startRemediationPolling() {
+    if (pendingRemediationStates.includes(state.currentFinding?.status) && remediationTimer === null) {
+        remediationTimer = setInterval(pollRemediation, 1500);
+    }
+}
+
+async function pollRemediation() {
+    if (remediationRequest !== null) return;
+    if (!state.user || state.activeView !== 'campaign-detail-view'
+        || !pendingRemediationStates.includes(state.currentFinding?.status)) {
+        stopRemediationPolling();
+        return;
+    }
+    const request = { epoch: remediationEpoch, session: state.sessionVersion, id: state.currentFinding.id };
+    remediationRequest = request;
+    const current = () => request.epoch === remediationEpoch && request.session === state.sessionVersion
+        && state.activeView === 'campaign-detail-view' && state.currentFinding?.id === request.id;
+    try {
+        const finding = await api.getFinding(request.id);
+        if (!current() || finding.version === state.currentFinding.version) return;
+        const campaign = await api.getCampaign(finding.campaign_id);
+        if (!current()) return;
+        state.currentFinding = finding;
+        state.currentCampaign = campaign;
+        state.allFindings = campaign.findings;
+        renderCampaignDetail();
+        renderFindingDetail();
+        if (!pendingRemediationStates.includes(finding.status)) stopRemediationPolling();
+    } catch (error) {
+        if (current()) showError('finding-error', 'Unable to refresh remediation status. Retrying.');
+    } finally {
+        if (remediationRequest === request) remediationRequest = null;
     }
 }
 

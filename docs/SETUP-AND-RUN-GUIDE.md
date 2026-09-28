@@ -17,6 +17,8 @@ separate; it is not required for the simulated demonstration. From PowerShell:
 Set-Location 'C:\Users\MONTASER YOUSUF\Documents\IGA-Platform'
 $env:IGA_AI_PROVIDER = 'rules'
 & './governance-platform/access-review/.venv-ai/Scripts/python.exe' -m iga_review.cli demo --empty --state-dir './governance-platform/access-review/.demo-review/environment-first-walkthrough' --identities './governance-platform/hr-policy/data/identities.json' --policies './governance-platform/hr-policy/data/policies.json' --port 8042
+# Or use the checked-in presentation helper:
+& './scripts/start-demo.ps1' -StateDir './.demo-review/presentation' -Port 8042
 ```
 
 Use a **new** state directory for an empty starting point. This command preserves
@@ -434,19 +436,19 @@ cd "C:\Users\MONTASER YOUSUF\Documents\IGA-Platform"
 # Module 1 (HR Policy) - 67 tests
 & '.\governance-platform\access-review\.venv-ai\Scripts\python.exe' -m unittest discover -s governance-platform/hr-policy/tests
 
-# Module 4 (Access Review) - 164 tests
+# Module 4 (Access Review) - 170 tests
 & '.\governance-platform\access-review\.venv-ai\Scripts\python.exe' -m unittest discover -s governance-platform/access-review/tests
 
-# Module 3 (Connector) - 14 tests
+# Module 3 (Connector) - 16 offline tests (1 live-lab test skipped)
 & '.\governance-platform\access-review\.venv-ai\Scripts\python.exe' -m unittest discover -s environment-integration/connector/tests -p test_offline_audit.py
 
-# UI Tests - 8 tests
+# UI Tests - 14 tests
 node --test governance-platform/access-review/tests/ui_runtime.test.cjs
 
 # JavaScript Syntax Check
 node --check governance-platform/access-review/static/app.js
 
-# Total: 253 tests
+# Total: 267 automated tests
 ```
 
 ---

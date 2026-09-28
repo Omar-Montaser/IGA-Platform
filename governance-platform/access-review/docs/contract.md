@@ -183,8 +183,11 @@ visible with blocked decisions. Real-data AI consent is enforced before review.
 Campaign insertion, findings, supersession, audit and run completion commit in
 one transaction, so a lost return after commit recovers the same campaign.
 
-The additive SQLite schema migration to version 3 creates run, event and
-immutable inventory tables without rewriting existing campaigns or audit hashes.
+The additive SQLite schema migration to version 4 creates run, event and
+immutable inventory tables, plus a fenced remediation request lease token,
+without rewriting existing campaigns or audit hashes. The lease token prevents
+a late connector result from an expired worker from overwriting a recovered
+request.
 Public responses omit input documents, filesystem paths, URLs and credentials.
 Existing `POST /api/campaigns` full-payload imports remain supported.
 `GET /api/environment` remains the legacy active-scan endpoint (five-second

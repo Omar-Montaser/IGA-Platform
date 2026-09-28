@@ -28,7 +28,7 @@ its progress, review findings, record decisions and inspect the audit trail.
 | Goal | Guide |
 | --- | --- |
 | Run the complete local demo | [Setup and Run Guide](docs/SETUP-AND-RUN-GUIDE.md) |
-| Prepare a presentation | [Presentation Runbook](docs/PRESENTATION-RUNBOOK.md) |
+| Understand the review workflow | [Access review guide](governance-platform/access-review/README.md) |
 | Understand the API and recovery rules | [Module 4 contract](governance-platform/access-review/docs/contract.md) |
 | Read the product comparison and roadmap | [IGA comparison and roadmap](docs/IGA-PLATFORM-COMPARISON-AND-ROADMAP.md) |
 | Understand the HR and policy input contract | [Module 1 README](governance-platform/hr-policy/README.md) |
@@ -76,6 +76,22 @@ does not delete an existing directory or reset previous simulated removals.
 Rules mode is an offline fallback. It does not represent a successful external
 model review.
 
+## What the demo looks like
+
+The admin starts with a connected source and no campaign. The environment card
+shows the last known inventory after the first scan, then the run rail records
+each stage until findings are ready.
+
+![Empty environment view](docs/images/environment-empty.png)
+
+![Review-ready environment with recorded stages](docs/images/environment-review-ready.png)
+
+The findings workspace keeps the decision beside the evidence. Reviewers can
+see direct and inherited grant paths, scan metadata, evidence limits and the
+available human action in one place.
+
+![Access review evidence panel](docs/images/access-review-evidence.png)
+
 ## Design rules
 
 - HR data says who the person is, their role and whether they should be active.
@@ -90,15 +106,15 @@ model review.
 
 ## Verification status
 
-Verified on 2026-09-24:
+Verified on 2026-09-28:
 
 | Check | Result |
 | --- | ---: |
 | Module 1 contract and generator suite | 67 passed |
-| Module 4 access-review suite | 164 passed |
-| Offline connector and integration suite | 14 passed |
-| JavaScript runtime suite | 8 passed |
-| Total automated tests | **253 passed** |
+| Module 4 access-review suite | 170 passed |
+| Offline connector and integration suite | 16 passed, 1 live-lab test skipped |
+| JavaScript runtime suite | 14 passed |
+| Total automated tests | **267 passed** |
 | JavaScript syntax | Passed |
 
 The Module 4 suite covers durable runs, lease recovery, shutdown, retries,
@@ -126,7 +142,7 @@ The following still need separate validation:
 
 - Native Linux seeding, live SSH discovery and native access changes
 - Live external model availability, quota behavior and review quality
-- A fresh real-browser pass after the latest UI stage-rail polish
+- A fresh real-browser pass after the latest remediation-polling tweak
 - Cross-browser accessibility testing
 - Production SSO, backups, metrics, rate limiting and worker supervision
 

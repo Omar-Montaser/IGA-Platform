@@ -257,38 +257,29 @@ class ReviewService:
             campaigns = conn.execute('SELECT * FROM campaigns ORDER BY rowid DESC').fetchall()
             result = []
             for row in campaigns:
-                # For non-admin, check visibility: must have at least one visible finding
+                # Return only counters, rather than decoding every finding's
+                # evidence and repeated case assessment for the campaign list.
+                scope = 'campaign_id=?'
+                params = [row['id']]
                 if actor.role != 'admin':
-                    visible = conn.execute('SELECT 1 FROM findings WHERE campaign_id=? AND reviewer_id=? LIMIT 1',
-                                           (row['id'], actor.id)).fetchone()
-                    if not visible:
-                        continue
-
-                # Compute summary counts without loading full finding payloads
-                if actor.role == 'admin':
-                    stats = conn.execute('''
-                        SELECT status, payload_json FROM findings WHERE campaign_id=?
-                    ''', (row['id'],)).fetchall()
-                else:
-                    stats = conn.execute('''
-                        SELECT status, payload_json FROM findings WHERE campaign_id=? AND reviewer_id=?
-                    ''', (row['id'], actor.id)).fetchall()
-
-                # Extract risk_level and status from payload_json
-                findings_data = [{'status': s['status'], **json.loads(s['payload_json'])} for s in stats]
+                    scope += ' AND reviewer_id=?'
+                    params.append(actor.id)
+                stats = conn.execute('''
+                    SELECT COUNT(*) AS total,
+                        COALESCE(SUM(status='pending'),0) AS pending,
+                        COALESCE(SUM(json_extract(payload_json,'$.risk_level')='critical'),0) AS critical,
+                        COALESCE(SUM(json_extract(payload_json,'$.risk_level')='high'),0) AS high,
+                        COALESCE(SUM(status='revoked_verified'),0) AS verified
+                    FROM findings WHERE ''' + scope, params).fetchone()
+                if actor.role != 'admin' and not stats['total']:
+                    continue
 
                 warnings = self._quality(row)
                 result.append({
                     'id': row['id'], 'name': row['name'], 'source': row['source'],
                     'created_at': row['created_at'], 'warnings': warnings, 'actionable': not warnings,
                     'superseded_by': row['superseded_by'], 'metadata': json.loads(row['metadata_json']),
-                    'summary': {
-                        'total': len(findings_data),
-                        'pending': sum(f['status'] == 'pending' for f in findings_data),
-                        'critical': sum(f.get('risk_level') == 'critical' for f in findings_data),
-                        'high': sum(f.get('risk_level') == 'high' for f in findings_data),
-                        'verified': sum(f['status'] == 'revoked_verified' for f in findings_data)
-                    }
+                    'summary': dict(stats)
                 })
         return {'campaigns': result}
 
@@ -368,7 +359,7 @@ class ReviewService:
             if row['state'] not in ('failed', 'verification_failed'):
                 raise ServiceError(409, 'retry_blocked', 'Only failed work can be retried.')
             state = 'verification_pending' if row['state'] == 'verification_failed' else 'queued'
-            conn.execute('UPDATE requests SET state=?,lease_until=NULL,last_error=NULL WHERE id=?', (state, request_id))
+            conn.execute('UPDATE requests SET state=?,lease_until=NULL,lease_token=NULL,last_error=NULL WHERE id=?', (state, request_id))
             self.store.audit(conn, row['campaign_id'], row['finding_id'], timestamp(self.clock()), actor.id, 'retry_requested', {'request_id': request_id, 'state': state})
         return self._work(request_id)
 
@@ -401,7 +392,9 @@ class ReviewService:
                 self._finish(conn, row, 'failed', 'Evidence is stale, incomplete, or superseded; create a fresh review before dispatch.')
                 return {'request_id': request_id, 'state': 'failed'}
             state = 'verification_pending' if verifying else 'dispatching'
-            conn.execute('UPDATE requests SET state=?,lease_until=? WHERE id=?', (state, timestamp(now + timedelta(minutes=2)), request_id))
+            lease_token = str(uuid4())
+            conn.execute('UPDATE requests SET state=?,lease_until=?,lease_token=? WHERE id=?',
+                         (state, timestamp(now + timedelta(minutes=2)), lease_token, request_id))
             self.store.audit(conn, row['campaign_id'], row['finding_id'], timestamp(now), 'system', 'verification_started' if verifying else 'dispatch_started', {'request_id': request_id})
             request = json.loads(row['payload_json'])
         connector = self.connectors.get(request['source'])
@@ -415,7 +408,11 @@ class ReviewService:
                 if response['status'] == 'failed':
                     raise InputError('Connector reported that removal failed.')
                 with self.store.transaction() as conn:
-                    conn.execute('UPDATE requests SET state=? WHERE id=?', ('verification_pending', request_id))
+                    lost = self._lost_request_lease(conn, request_id, lease_token)
+                    if lost:
+                        return lost
+                    conn.execute('UPDATE requests SET state=?,lease_until=? WHERE id=?',
+                                 ('verification_pending', timestamp(self.clock() + timedelta(minutes=2)), request_id))
                     conn.execute('UPDATE findings SET status=?,version=version+1 WHERE id=?', ('verification_pending', row['finding_id']))
                     self.store.audit(conn, row['campaign_id'], row['finding_id'], timestamp(self.clock()), 'system', 'connector_acknowledged', {'request_id': request_id})
             scan_request_id = 'rescan:' + str(uuid4())
@@ -424,6 +421,9 @@ class ReviewService:
             fresh = Scan.model_validate(fresh_raw)
             problem = self._verification_problem(request, fresh, scan_request_id, requested_at)
             with self.store.transaction() as conn:
+                lost = self._lost_request_lease(conn, request_id, lease_token)
+                if lost:
+                    return lost
                 known = conn.execute('SELECT digest FROM scans WHERE source=? AND scan_id=?', (fresh.source, fresh.scan_id)).fetchone()
                 if known:
                     problem = problem or 'Verification scan ID was already used.'
@@ -436,10 +436,26 @@ class ReviewService:
             # Do not leak credentials or remote response bodies into user-visible errors.
             message = str(exc) if isinstance(exc, InputError) else 'Connector interaction failed; retry the same approved request after checking the connector.'
             with self.store.transaction() as conn:
+                lost = self._lost_request_lease(conn, request_id, lease_token)
+                if lost:
+                    return lost
                 current = conn.execute('SELECT state FROM requests WHERE id=?', (request_id,)).fetchone()['state']
                 state = 'verification_failed' if current == 'verification_pending' else 'failed'
                 self._finish(conn, row, state, message)
             return {'request_id': request_id, 'state': state, 'error': message}
+
+    def _lost_request_lease(self, conn, request_id, token):
+        """Fence every post-I/O write, including errors, after lease recovery.
+
+        The connector still deduplicates the approved request ID. This fence
+        protects local state and audit evidence from an older worker's result.
+        """
+        current = conn.execute('SELECT state,lease_token,lease_until FROM requests WHERE id=?', (request_id,)).fetchone()
+        if (current['lease_token'] != token or not current['lease_until']
+                or instant(current['lease_until']) <= self.clock()
+                or current['state'] not in ('dispatching', 'verification_pending')):
+            return {'request_id': request_id, 'state': current['state'], 'busy': True}
+        return None
 
     def _verification_problem(self, request, scan, request_id, requested_at):
         if scan.request_id != request_id or scan.source != request['source']:
@@ -463,7 +479,7 @@ class ReviewService:
 
     def _finish(self, conn, row, state, error=None, evidence=None):
         evidence_json = canonical(evidence) if evidence is not None else row['verification_json']
-        conn.execute('UPDATE requests SET state=?,lease_until=NULL,last_error=?,verification_json=? WHERE id=?', (state, error, evidence_json, row['id']))
+        conn.execute('UPDATE requests SET state=?,lease_until=NULL,lease_token=NULL,last_error=?,verification_json=? WHERE id=?', (state, error, evidence_json, row['id']))
         item_state = {'verified': 'revoked_verified', 'verification_failed': 'verification_failed', 'failed': 'revoke_failed'}[state]
         conn.execute('UPDATE findings SET status=?,version=version+1 WHERE id=?', (item_state, row['finding_id']))
         self.store.audit(conn, row['campaign_id'], row['finding_id'], timestamp(self.clock()), 'system', state,

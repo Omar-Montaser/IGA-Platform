@@ -193,29 +193,29 @@ The exact schemas, response shapes, state machine, and security boundaries are
 in [contract.md](docs/contract.md). Design research is in
 [research.md](docs/research.md).
 
-## Verified outcomes — 2026-09-24
+## Verified outcomes - 2026-09-28
 
-- 164 Module 4 tests passed; provider calls are mocked or rules-only. This
-  includes 28 campaign-run tests for idempotency, lease recovery, stalled-call
+- 170 Module 4 tests passed; provider calls are mocked or rules-only. This
+  includes campaign-run tests for idempotency, lease recovery, stalled-call
   shutdown/deadlines, atomic rollback/completion, freshness, immutable evidence,
-  prior simulated removals, source-busy checks, authorization and consent.
+  prior simulated removals, source-busy checks, authorization and consent, plus
+  late remediation result fencing and scoped campaign counters.
 - Module 1's 67-test contract/generator suite passed, including fixture
   reproducibility.
-- 14 offline connector tests passed, including real localhost HTTP and
+- 16 offline connector tests passed, including real localhost HTTP and
   authenticated campaign import/export with all 367 captured assignments.
 - The separate captured-connector campaign-start test passed over real loopback
   HTTP: Module 4 → Module 3 fixture discovery/normalization → persisted campaign.
-- 8 JavaScript runtime tests passed (DOM stub): submission idempotency, concurrent
+- 14 JavaScript runtime tests passed (DOM stub): submission idempotency, concurrent
   click suppression, polling, session cleanup, recovery, retry and escaping.
   JavaScript syntax checking passed.
-- Browser: the environment-first walkthrough previously passed through empty
-  Environment, administrator sign-in, Start, recorded stages, campaign/finding
-  access and completed-run recovery after reload/sign-in. The final red/white/grey
-  typography and stage-rail polish was added afterward; it is covered by the UI
-  route and JavaScript runtime suites, but needs one fresh real-browser pass
-  before presentation. A temporary delayed fixture/rules harness also verified
-  reload during scanning and recovery while reviewing; this delay is not part of
-  the shipped demo.
+- Browser: a fresh Chromium walkthrough passed through empty Environment,
+  administrator sign-in, Start, recorded stages, campaign/finding access,
+  evidence inspection and reload/sign-in recovery. The browser also reached a
+  revoke decision and showed the item moving to verification pending. The
+  final remediation-polling tweak was covered by the JavaScript suite but could
+  not receive a second browser pass in this session. External model review and
+  live connector behavior remain unverified.
 - No live Linux connection, native access change, paid call, external model review
   or AI accuracy evaluation was performed. Earlier `ai-check` reported not
   configured; it was not rerun here.
