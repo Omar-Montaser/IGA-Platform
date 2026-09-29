@@ -176,11 +176,28 @@ class WorkflowTests(Case):
         fresh=deepcopy(self.payload['scan']);fresh.update(scan_id='scan:fresh',request_id='rescan:expected',scanned_at=timestamp(self.now+timedelta(seconds=1)))
         fresh['grant_paths']=[p for p in fresh['grant_paths'] if not(p['account_id']==self.target['account_id'] and p['entitlement_id']==self.target['entitlement_id'])]
         fresh['assignments']=[a for a in fresh['assignments'] if not(a['identity']==request['identity'] and a['entitlement']==request['entitlement'])]
-        for field,value in [('request_id','rescan:wrong'),('mapping_version','other'),('scan_id',request['scan_id']),('scanned_at',timestamp(self.now)),('complete',False)]:
+        for field,value in [('request_id','rescan:wrong'),('mapping_version','other'),('scan_id',request['scan_id']),('scanned_at',timestamp(self.now-timedelta(seconds=301))),('complete',False)]:
             with self.subTest(field=field):
                 changed=deepcopy(fresh);changed[field]=value
+                if field == 'scanned_at':
+                    for assignment in changed['assignments']:
+                        if assignment['timestamp'] is not None: assignment['timestamp']=value
                 self.assertIsNotNone(self.service._verification_problem(request,Scan.model_validate(changed),'rescan:expected',self.now))
         self.assertIsNone(self.service._verification_problem(request,Scan.model_validate(fresh),'rescan:expected',self.now))
+
+    def test_verification_accepts_connector_clock_within_allowed_skew(self):
+        request=dict(source='prototype-system', identity=self.target['account_id'],
+                     entitlement=self.target['entitlement_id'], scan_id=self.payload['scan']['scan_id'],
+                     mapping_version=self.payload['scan']['mapping_version'], approved_at=timestamp(self.now))
+        fresh=deepcopy(self.payload['scan'])
+        fresh.update(scan_id='scan:skewed', request_id='rescan:skewed',
+                     scanned_at=timestamp(self.now-timedelta(seconds=30)))
+        fresh['grant_paths']=[p for p in fresh['grant_paths'] if not(
+            p['account_id']==self.target['account_id'] and p['entitlement_id']==self.target['entitlement_id'])]
+        fresh['assignments']=[a for a in fresh['assignments'] if not(
+            a['identity']==request['identity'] and a['entitlement']==request['entitlement'])]
+        self.assertIsNone(self.service._verification_problem(
+            request, Scan.model_validate(fresh), 'rescan:skewed', self.now))
     def test_transport_retry_reuses_request_and_sanitizes_error(self):
         fixture=self.connector
         class Flaky:

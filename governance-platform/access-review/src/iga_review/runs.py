@@ -213,7 +213,10 @@ class CampaignRuns:
             self.stage(run_id, token, 'validating')
             if scan.source != row['source'] or scan.request_id != request_id:
                 raise InputError('Connector response source or request ID does not match this run.')
-            if instant(scan.scanned_at) < requested_at:
+            # The connector and review service can run on different hosts.
+            # Correlation is established by the fresh request ID and scan ID;
+            # wall-clock ordering must allow the configured bounded skew.
+            if (requested_at - instant(scan.scanned_at)).total_seconds() > self.service.config.max_clock_skew_seconds:
                 raise InputError('Connector returned evidence older than this scan request.')
             if (instant(scan.scanned_at) - self.service.clock()).total_seconds() > self.service.config.max_clock_skew_seconds:
                 raise InputError('Connector observation time is too far in the future.')

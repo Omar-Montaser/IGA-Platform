@@ -130,7 +130,7 @@ class RunTests(unittest.TestCase):
         original = self.connector.scan
         mutations = [lambda s: s.update(request_id='wrong'),
                      lambda s: s.update(source='wrong'),
-                     lambda s: s.update(scanned_at=timestamp(self.now-timedelta(seconds=1))),
+                     lambda s: s.update(scanned_at=timestamp(self.now-timedelta(seconds=301))),
                      lambda s: s.update(complete=False),
                      lambda s: s.update(scanned_at=timestamp(self.now+timedelta(hours=1)))]
         for index, mutate in enumerate(mutations):
@@ -142,6 +142,22 @@ class RunTests(unittest.TestCase):
                 self.assertFalse(run['can_retry'])
                 self.assertIsNone(run['campaign_id'])
         self.assertEqual(self.service.list_campaigns(self.admin)['campaigns'], [])
+
+    def test_scan_from_connector_clock_within_allowed_skew_is_accepted(self):
+        original = self.connector.scan
+
+        def scan(source, request_id):
+            result = original(source, request_id)
+            skewed = timestamp(self.now - timedelta(seconds=30))
+            result['scanned_at'] = skewed
+            for assignment in result['assignments']:
+                if assignment['timestamp'] is not None:
+                    assignment['timestamp'] = skewed
+            return result
+
+        with patch.object(self.connector, 'scan', side_effect=scan):
+            run = self.run_job('bounded-clock-skew')
+        self.assertEqual(run['state'], 'completed', run)
 
     def test_wrong_mapping_and_invalid_correlations_block(self):
         self.env[self.source]['mapping_version'] = 'wrong'

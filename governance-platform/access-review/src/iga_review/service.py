@@ -462,9 +462,15 @@ class ReviewService:
             return 'Verification response has the wrong request or source.'
         if scan.scan_id == request['scan_id'] or scan.mapping_version != request['mapping_version']:
             return 'Verification needs a new scan with the same mapping version.'
-        if instant(scan.scanned_at) < requested_at or instant(scan.scanned_at) <= instant(request['approved_at']):
+        scan_time = instant(scan.scanned_at)
+        allowed_skew = self.config.max_clock_skew_seconds
+        # The connector may run on another host. The unique request ID proves
+        # this scan answered the verification request, while this bounded
+        # comparison rejects evidence from a materially older clock.
+        if ((requested_at - scan_time).total_seconds() > allowed_skew
+                or (instant(request['approved_at']) - scan_time).total_seconds() > allowed_skew):
             return 'Verification evidence predates this scan request or approval.'
-        if (instant(scan.scanned_at) - self.clock()).total_seconds() > self.config.max_clock_skew_seconds:
+        if (scan_time - self.clock()).total_seconds() > allowed_skew:
             return 'Verification scan timestamp is too far in the future.'
         if not scan.complete or request['entitlement'] not in scan.scope_entitlements:
             return 'Verification scan does not completely cover the target capability.'
